@@ -2,13 +2,15 @@
 {% block content %}
 <div class="auth card">
   <h1>Sign in</h1>
-  <p class="muted">Submit your assigned work to the ADUST IT section.</p>
+  <p class="muted">Send work requests to the ADUST IT section and track their progress.</p>
   <form method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label>Email <input type="email" name="email" required autofocus value="{{ request.form.email }}"></label>
-    <label>Password <input type="password" name="password" required></label>
+    <label>University email or user ID
+      <input name="identifier" required autofocus autocomplete="username" placeholder="name@{{ domain }} or employee ID" value="{{ request.form.identifier }}"></label>
+    <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
+    {% if webmail %}<p class="hint">You can use your <strong>@{{ domain }} webmail password</strong>.</p>{% endif %}
     <button class="btn primary full">Sign in</button>
   </form>
-  <p class="muted center">No account? <a href="{{ url_for('register') }}">Register</a></p>
+  <p class="muted center">New here? <a href="{{ url_for('register') }}">Create an account</a></p>
 </div>
 {% endblock %}

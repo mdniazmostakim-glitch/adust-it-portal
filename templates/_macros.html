@@ -1,0 +1,23 @@
+{% macro status(s) %}<span class="badge st-{{ s }}">{{ STATUSES[s] }}</span>{% endmacro %}
+{% macro prio(t) %}<span class="prio {{ t.priority|prio }}" title="Priority {{ t.priority }} of 10">P{{ t.priority }}</span>{% if t.urgent %} <span class="badge urgent">URGENT</span>{% endif %}{% endmacro %}
+{% macro due(t) %}{% if t.due_date %}<span class="due {{ t|due_state }}">{{ t.due_date|d }}{% if t|due_state == 'overdue' %} · overdue{% endif %}</span>{% else %}<span class="muted">—</span>{% endif %}{% endmacro %}
+{% macro ticket_table(tickets, show_requester=True) %}
+{% if tickets %}
+<table class="tickets">
+  <thead><tr><th>Request</th><th>Category</th><th>Priority</th><th>Needed by</th>{% if show_requester %}<th>From</th>{% endif %}<th>Assigned to</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for t in tickets %}
+  <tr onclick="location.href='{{ url_for('ticket_detail', ticket_id=t.id) }}'" class="{{ 'is-urgent' if t.urgent and t.status in OPEN_STATUSES }}">
+    <td data-label="Request"><a href="{{ url_for('ticket_detail', ticket_id=t.id) }}"><span class="code">{{ t.code }}</span> {{ t.title }}</a></td>
+    <td data-label="Category">{{ t.category or '—' }}</td>
+    <td data-label="Priority">{{ prio(t) }}</td>
+    <td data-label="Needed by">{{ due(t) }}</td>
+    {% if show_requester %}<td data-label="From">{{ t.requester_name }}<br><small class="muted">{{ t.requester_dept }}</small></td>{% endif %}
+    <td data-label="Assigned to">{{ t.assignee_name or 'IT Section' }}</td>
+    <td data-label="Status">{{ status(t.status) }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="muted">No requests found.</p>{% endif %}
+{% endmacro %}

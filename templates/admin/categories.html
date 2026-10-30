@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% block title %}Categories{% endblock %}
+{% block content %}
+<h1>Work categories</h1>
+<div class="card">
+  <form method="post" class="filters">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input name="name" required placeholder="New category name">
+    <button class="btn primary">Add category</button>
+  </form>
+</div>
+<div class="card">
+  <table>
+    <thead><tr><th>Category</th><th>Requests</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for c in categories %}
+    <tr class="{{ '' if c.active else 'inactive' }}">
+      <td data-label="Category">{{ c.name }}</td><td data-label="Requests">{{ c.n }}</td>
+      <td data-label="Status">{{ 'Active' if c.active else 'Hidden' }}</td>
+      <td><form method="post" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn small" name="toggle" value="{{ c.id }}">{{ 'Hide' if c.active else 'Show' }}</button></form></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

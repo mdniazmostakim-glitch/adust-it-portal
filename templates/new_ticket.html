@@ -1,0 +1,36 @@
+{% extends "base.html" %}{% block title %}New request{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Assign work to the IT section</h1>
+  <p class="muted">Fill in what you need. The IT section will be notified immediately and you will get updates here.</p>
+  <form method="post" enctype="multipart/form-data" class="grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="span">Title / short summary *
+      <input name="title" required maxlength="150" placeholder="e.g. Internet not working in Room 402" value="{{ request.form.title }}"></label>
+    <label>Category *
+      <select name="category_id" required>
+        <option value="">— Select category —</option>
+        {% for c in categories %}<option value="{{ c.id }}" {{ 'selected' if request.form.category_id == c.id|string }}>{{ c.name }}</option>{% endfor %}
+      </select></label>
+    <label>Assign to (IT staff)
+      <select name="assigned_to">
+        <option value="">IT Section (any available staff)</option>
+        {% for s in staff %}<option value="{{ s.id }}" {{ 'selected' if request.form.assigned_to == s.id|string }}>{{ s.name }}{% if s.designation %} — {{ s.designation }}{% endif %}</option>{% endfor %}
+      </select></label>
+    <label>Priority (1 = low, 10 = highest): <output id="pv">{{ request.form.priority or 5 }}</output>
+      <input type="range" name="priority" min="1" max="10" value="{{ request.form.priority or 5 }}" oninput="pv.value = this.value"></label>
+    <label>Needed by (date)
+      <input type="date" name="due_date" value="{{ request.form.due_date }}" id="due"></label>
+    <label class="check urgent-box"><input type="checkbox" name="urgent" value="1" {{ 'checked' if request.form.urgent }}> <span><strong>Urgent</strong> — work is blocked, needs immediate attention</span></label>
+    <label>Location (building / room)
+      <input name="location" placeholder="e.g. Main campus, Room 402" value="{{ request.form.location }}"></label>
+    <label class="span">Description — what do you need? *
+      <textarea name="description" rows="5" required placeholder="Explain the problem or the work needed…">{{ request.form.description }}</textarea></label>
+    <label class="span">Remarks
+      <textarea name="remarks" rows="2" placeholder="Anything else: best time to visit, contact person, reference…">{{ request.form.remarks }}</textarea></label>
+    <label class="span">Attachment (optional, max 25 MB) <input type="file" name="file"></label>
+    <div class="span"><button class="btn primary">Send to IT section</button> <a class="btn" href="{{ url_for('index') }}">Cancel</a></div>
+  </form>
+</div>
+<script>document.getElementById('due').min = new Date().toISOString().slice(0, 10);</script>
+{% endblock %}

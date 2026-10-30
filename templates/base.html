@@ -3,29 +3,34 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Work Submission{% endblock %} · ADUST IT Section</title>
+  <title>{% block title %}IT Service Portal{% endblock %} · ADUST IT Section</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 <header class="topbar">
   <div class="wrap topbar-inner">
     <a class="brand" href="{{ url_for('index') }}">
-      <span class="logo">AD</span>
-      <span><strong>ADUST</strong> IT Section<br><small>Work Submission Portal</small></span>
+      <span class="logo">IT</span>
+      <span><strong>ADUST IT Section</strong><br><small>Service Request Portal</small></span>
     </a>
     {% if g.user %}
+    <button class="menu-btn" onclick="document.body.classList.toggle('nav-open')" aria-label="Menu">☰</button>
     <nav>
+      <a href="{{ url_for('index') }}">Dashboard</a>
+      <a href="{{ url_for('new_ticket') }}">+ New request</a>
+      <a href="{{ url_for('ticket_list') }}">{{ 'All requests' if is_it() else 'My requests' }}</a>
+      {% if is_it() %}<a href="{{ url_for('admin_reports') }}">Reports</a>{% endif %}
       {% if g.user.role == 'admin' %}
-        <a href="{{ url_for('admin_dashboard') }}">Dashboard</a>
-        <a href="{{ url_for('admin_new_assignment') }}">Assign work</a>
         <a href="{{ url_for('admin_users') }}">Users</a>
-      {% else %}
-        <a href="{{ url_for('dashboard') }}">My work</a>
+        <a href="{{ url_for('admin_categories') }}">Categories</a>
+        <a href="{{ url_for('admin_network') }}">Network</a>
       {% endif %}
-      <a href="{{ url_for('change_password') }}">Password</a>
+      {% set unread = unread_count() %}
+      <a href="{{ url_for('notifications') }}" class="bell" title="Notifications">🔔<span id="bell-count" class="count"{% if not unread %} hidden{% endif %}>{{ unread }}</span></a>
+      <a href="{{ url_for('profile') }}" title="Profile">{{ g.user.name.split()[0] }}</a>
       <form method="post" action="{{ url_for('logout') }}" class="inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="link">Sign out ({{ g.user.name.split()[0] }})</button>
+        <button class="link">Sign out</button>
       </form>
     </nav>
     {% endif %}
@@ -37,6 +42,35 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
-<footer class="wrap footer">Atish Dipankar University of Science and Technology · IT Section</footer>
+<footer class="wrap footer">Atish Dipankar University of Science and Technology · IT Section · University network only</footer>
+{% if g.user %}
+<script>
+(function () {
+  var last = Number(localStorageGet('lastNotif') || 0), bell = document.getElementById('bell-count');
+  function localStorageGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function poll() {
+    fetch('{{ url_for("api_notifications") }}?since=' + last, { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d) return;
+        bell.textContent = d.unread; bell.hidden = !d.unread;
+        document.title = (d.unread ? '(' + d.unread + ') ' : '') + document.title.replace(/^\(\d+\) /, '');
+        d.latest.forEach(function (n) {
+          if (n.id > last && last && 'Notification' in window && Notification.permission === 'granted') {
+            var note = new Notification('ADUST IT Portal', { body: n.message });
+            note.onclick = function () { location.href = '/tickets/' + n.ticket_id; };
+          }
+        });
+        if (d.latest.length) { last = Math.max(last, d.latest[0].id); localStorageSet('lastNotif', last); }
+      }).catch(function () {});
+  }
+  if ('Notification' in window && Notification.permission === 'default') {
+    document.addEventListener('click', function ask() { Notification.requestPermission(); document.removeEventListener('click', ask); });
+  }
+  poll(); setInterval(poll, 30000);
+})();
+</script>
+{% endif %}
 </body>
 </html>

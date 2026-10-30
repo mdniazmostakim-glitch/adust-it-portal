@@ -1,31 +1,26 @@
-{% extends "base.html" %}{% from "_status.html" import badge, due %}
-{% block title %}My work{% endblock %}
+{% extends "base.html" %}{% from "_macros.html" import ticket_table %}
+{% block title %}Dashboard{% endblock %}
 {% block content %}
-<h1>Assigned work</h1>
+<div class="row-between">
+  <h1>{{ 'IT Section dashboard' if is_it() else 'Welcome, ' ~ g.user.name.split()[0] }}</h1>
+  <a class="btn primary" href="{{ url_for('new_ticket') }}">+ New request</a>
+</div>
 <div class="stats">
-  <div class="stat"><b>{{ counts.total }}</b><span>Total</span></div>
-  <div class="stat"><b>{{ counts.pending }}</b><span>Not submitted</span></div>
-  <div class="stat"><b>{{ counts.submitted }}</b><span>Pending review</span></div>
-  <div class="stat"><b>{{ counts.needs_revision }}</b><span>Needs revision</span></div>
-  <div class="stat"><b>{{ counts.approved }}</b><span>Approved</span></div>
+  {% if is_it() %}
+  <a class="stat highlight" href="{{ url_for('ticket_list', assigned='me') }}"><b>{{ stats.mine }}</b><span>Assigned to me</span></a>
+  <a class="stat" href="{{ url_for('ticket_list', status='new') }}"><b>{{ stats.new }}</b><span>New</span></a>
+  <a class="stat" href="{{ url_for('ticket_list', assigned='none') }}"><b>{{ stats.unassigned }}</b><span>Unassigned</span></a>
+  <a class="stat {{ 'alert' if stats.overdue }}" href="{{ url_for('ticket_list') }}"><b>{{ stats.overdue }}</b><span>Overdue</span></a>
+  <a class="stat" href="{{ url_for('ticket_list', status='resolved') }}"><b>{{ stats.resolved }}</b><span>Resolved / closed</span></a>
+  {% else %}
+  <a class="stat highlight" href="{{ url_for('ticket_list') }}"><b>{{ stats.open }}</b><span>Open requests</span></a>
+  <a class="stat" href="{{ url_for('ticket_list', status='new') }}"><b>{{ stats.new }}</b><span>Waiting for IT</span></a>
+  <a class="stat" href="{{ url_for('ticket_list', status='in_progress') }}"><b>{{ stats.in_progress }}</b><span>In progress</span></a>
+  <a class="stat" href="{{ url_for('ticket_list', status='resolved') }}"><b>{{ stats.resolved }}</b><span>Completed</span></a>
+  {% endif %}
 </div>
 <div class="card">
-{% if assignments %}
-<table>
-  <thead><tr><th>Work</th><th>Due</th><th>Status</th><th>Last submitted</th><th></th></tr></thead>
-  <tbody>
-  {% for a in assignments %}
-  <tr>
-    <td data-label="Work"><a href="{{ url_for('assignment_detail', assignment_id=a.id) }}">{{ a.title }}</a></td>
-    <td data-label="Due">{{ due(a.due_date) }}</td>
-    <td data-label="Status">{{ badge(a.latest_status) }}</td>
-    <td data-label="Last submitted">{{ a.latest_at|dt }}</td>
-    <td><a class="btn small" href="{{ url_for('assignment_detail', assignment_id=a.id) }}">
-      {% if not a.latest_status %}Submit{% elif a.latest_status == 'needs_revision' %}Resubmit{% else %}View{% endif %}</a></td>
-  </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% else %}<p class="muted">No work has been assigned to you yet.</p>{% endif %}
+  <div class="row-between"><h2>{{ 'Open work queue' if is_it() else 'My open requests' }}</h2><a href="{{ url_for('ticket_list', status='all') }}">View all →</a></div>
+  {{ ticket_table(tickets, show_requester=is_it()) }}
 </div>
 {% endblock %}

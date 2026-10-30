@@ -1,35 +1,42 @@
-{% extends "base.html" %}
-{% block title %}Users{% endblock %}
+{% extends "base.html" %}{% block title %}Users{% endblock %}
 {% block content %}
 <h1>Users</h1>
 <div class="card">
-  <h2>Add a user</h2>
+  <h2>{{ 'Edit ' ~ edit.name if edit else 'Add a user' }}</h2>
   <form method="post" class="grid">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label>Full name <input name="name" required></label>
-    <label>Email <input type="email" name="email" required></label>
-    <label>Department <input name="department" required></label>
-    <label>Role <select name="role"><option value="member">Member (submits work)</option><option value="admin">IT admin (reviews work)</option></select></label>
-    <label>Initial password <input type="password" name="password" minlength="8" required></label>
-    <div class="grid-end"><button class="btn primary">Create account</button></div>
+    {% if edit %}<input type="hidden" name="id" value="{{ edit.id }}">{% endif %}
+    <label>Full name * <input name="name" required value="{{ edit.name if edit }}"></label>
+    <label>Email * <input type="email" name="email" required value="{{ edit.email if edit }}"></label>
+    <label>User ID <input name="login_id" value="{{ edit.login_id or '' if edit }}"></label>
+    <label>Mobile <input name="phone" value="{{ edit.phone if edit }}"></label>
+    <label>Department / Office <input name="department" value="{{ edit.department if edit }}"></label>
+    <label>Designation <input name="designation" value="{{ edit.designation if edit }}"></label>
+    <label>Role <select name="role">{% for k, v in ROLES.items() %}<option value="{{ k }}" {{ 'selected' if edit and edit.role == k }}>{{ v }}</option>{% endfor %}</select></label>
+    <label>{{ 'New password (leave blank to keep)' if edit else 'Password (blank = webmail login only)' }} <input type="password" name="password" minlength="8"></label>
+    <div class="span"><button class="btn primary">{{ 'Save changes' if edit else 'Create account' }}</button>{% if edit %} <a class="btn" href="{{ url_for('admin_users') }}">Cancel</a>{% endif %}</div>
   </form>
+  <p class="hint">Requester = staff who send work · IT staff = works on requests · IT admin = IT staff + manages users, categories and network access.</p>
 </div>
 <div class="card">
   <table>
-    <thead><tr><th>Name</th><th>Email</th><th>Department</th><th>Role</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Email / User ID</th><th>Department</th><th>Role</th><th>Last login</th><th></th></tr></thead>
     <tbody>
     {% for u in users %}
     <tr class="{{ '' if u.active else 'inactive' }}">
-      <td data-label="Name">{{ u.name }}</td>
-      <td data-label="Email">{{ u.email }}</td>
+      <td data-label="Name">{{ u.name }}<br><small class="muted">{{ u.designation }}</small></td>
+      <td data-label="Email">{{ u.email }}<br><small class="muted">{{ u.login_id or '' }}</small></td>
       <td data-label="Department">{{ u.department }}</td>
-      <td data-label="Role">{{ 'IT admin' if u.role == 'admin' else 'Member' }}</td>
-      <td data-label="Status">{{ 'Active' if u.active else 'Deactivated' }}</td>
-      <td>{% if u.id != g.user.id %}
+      <td data-label="Role"><span class="badge role-{{ u.role }}">{{ ROLES[u.role] }}</span>{% if not u.active %} <span class="badge st-cancelled">Deactivated</span>{% endif %}</td>
+      <td data-label="Last login">{{ u.last_login|dt }}</td>
+      <td class="actions">
+        <a class="btn small" href="{{ url_for('admin_users', edit=u.id) }}">Edit</a>
+        {% if u.id != g.user.id %}
         <form method="post" action="{{ url_for('admin_toggle_user', user_id=u.id) }}" class="inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn small {{ 'danger' if u.active }}">{{ 'Deactivate' if u.active else 'Activate' }}</button>
-        </form>{% endif %}</td>
+        </form>{% endif %}
+      </td>
     </tr>
     {% endfor %}
     </tbody>

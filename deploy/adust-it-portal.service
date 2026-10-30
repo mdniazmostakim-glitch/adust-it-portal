@@ -1,0 +1,15 @@
+[Unit]
+Description=ADUST IT Section Service Request Portal
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/adust-it-portal
+EnvironmentFile=/etc/adust-it-portal.env
+Environment=TZ=Asia/Dhaka
+ExecStart=/opt/adust-it-portal/venv/bin/gunicorn --workers 3 --bind 127.0.0.1:8000 app:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
