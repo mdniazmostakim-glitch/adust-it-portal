@@ -3,11 +3,11 @@
 <div class="auth card">
   <div class="auth-head">
     <img class="auth-logo" src="{{ url_for('static', filename='img/adust-logo.png') }}" alt="ADUST logo">
-    <div><strong>Atish Dipankar University of Science &amp; Technology</strong>
-      <p class="auth-kicker">IT Section · Service Request Portal</p></div>
+    <div class="auth-uni">Atish Dipankar University<br>of Science &amp; Technology</div>
+    <div class="auth-kicker"><span>IT Section · Service Request Portal</span></div>
   </div>
-  <h1>Sign in</h1>
-  <p class="muted">Send work requests to the ADUST IT section and track their progress.</p>
+  <h1 class="center">Sign in</h1>
+  <p class="muted center">Send work requests to the IT section and track their progress.</p>
   <form method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label>University email or user ID

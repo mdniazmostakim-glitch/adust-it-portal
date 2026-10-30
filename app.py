@@ -233,7 +233,7 @@ def unread_count():
                             (g.user["id"],)).fetchone()[0]
 
 
-app.jinja_env.globals.update(csrf_token=csrf_token, STATUSES=STATUSES, ROLES=ROLES,
+app.jinja_env.globals.update(now_year=lambda: date.today().year, csrf_token=csrf_token, STATUSES=STATUSES, ROLES=ROLES,
                              is_it=is_it, unread_count=unread_count,
                              OPEN_STATUSES=OPEN_STATUSES)
 

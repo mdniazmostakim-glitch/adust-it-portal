@@ -49,8 +49,12 @@
   {% block content %}{% endblock %}
 </main>
 <footer class="footer">
-  <div class="wrap"><img src="{{ url_for('static', filename='img/adust-logo.png') }}" alt="" width="36" height="35">
-  <span>Atish Dipankar University of Science and Technology · IT Section<br><small>Available on the university network only</small></span></div>
+  <div class="wrap">
+    <img src="{{ url_for('static', filename='img/adust-logo.png') }}" alt="" width="40" height="40">
+    <div class="footer-name">Atish Dipankar University of Science &amp; Technology</div>
+    <div class="footer-meta">IT Section · Service Request Portal · University network only</div>
+    <div class="footer-copy">© {{ now_year() }} ADUST IT Section</div>
+  </div>
 </footer>
 {% if g.user %}
 <script>

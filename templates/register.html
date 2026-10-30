@@ -3,10 +3,10 @@
 <div class="auth card wide">
   <div class="auth-head">
     <img class="auth-logo" src="{{ url_for('static', filename='img/adust-logo.png') }}" alt="ADUST logo">
-    <div><strong>Atish Dipankar University of Science &amp; Technology</strong>
-      <p class="auth-kicker">IT Section · Service Request Portal</p></div>
+    <div class="auth-uni">Atish Dipankar University<br>of Science &amp; Technology</div>
+    <div class="auth-kicker"><span>IT Section · Service Request Portal</span></div>
   </div>
-  <h1>Create an account</h1>
+  <h1 class="center">Create an account</h1>
   <form method="post" class="grid">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label>Full name * <input name="name" required value="{{ request.form.name }}"></label>
