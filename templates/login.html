@@ -1,6 +1,8 @@
 {% extends "base.html" %}{% block title %}Sign in{% endblock %}
 {% block content %}
 <div class="auth card">
+  <img class="auth-logo" src="{{ url_for('static', filename='img/adust-logo-full.png') }}" alt="Atish Dipankar University of Science &amp; Technology (ADUST)">
+  <p class="auth-kicker">IT Section · Service Request Portal</p>
   <h1>Sign in</h1>
   <p class="muted">Send work requests to the ADUST IT section and track their progress.</p>
   <form method="post">

@@ -187,6 +187,8 @@ def ip_allowed(ip_text):
 @app.before_request
 def restrict_to_university_network():
     g.client_ip = request.remote_addr or ""
+    if request.path.startswith("/static/img/"):
+        return None
     if not ip_allowed(g.client_ip):
         return render_template("blocked.html", ip=g.client_ip), 403
 
