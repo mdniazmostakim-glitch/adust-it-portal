@@ -159,6 +159,29 @@ z = zipfile.ZipFile(os.path.join(d, "bk", bk[0])); assert "portal.db" in z.namel
 assert admin.get(f"/admin/backups/{bk[0]}").status_code == 200 and admin.get("/admin/backups/../t.db").status_code == 404
 print("housekeeping ok")
 
+# ---------- backups: second copy + monthly backups kept forever
+copy_dir = os.path.join(d, "offsite")
+app.config["BACKUP_COPY_FOLDER"] = copy_dir
+bkdir = os.path.join(d, "bk")
+fake = []
+for stamp in ["20250105-020000", "20250120-020000", "20250203-020000", "20250228-020000", "20250310-020000"]:
+    pth = os.path.join(bkdir, f"adust-it-backup-{stamp}.zip")
+    open(pth, "wb").write(b"old")
+    t = time.mktime(time.strptime(stamp, "%Y%m%d-%H%M%S")); os.utime(pth, (t, t)); fake.append(os.path.basename(pth))
+with app.app_context():
+    newest = os.path.basename(A.make_backup())
+left = set(os.listdir(bkdir))
+assert {"adust-it-backup-20250105-020000.zip", "adust-it-backup-20250203-020000.zip", "adust-it-backup-20250310-020000.zip"} <= left, left
+assert "adust-it-backup-20250120-020000.zip" not in left, left   # 0228 survives: newest 3 are always kept
+assert newest in os.listdir(copy_dir)
+ok(admin.get("/admin/backups"), "Backups (copy 2)", copy_dir)
+app.config["BACKUP_COPY_FOLDER"] = "/proc/forbidden/place"
+with app.app_context():
+    A.make_backup()
+ok(admin.get("/admin/backups"), "failed")
+app.config["BACKUP_COPY_FOLDER"] = ""
+print("backup retention + copy ok")
+
 # ---------- reports & exports
 ok(admin.get("/admin/reports?range=all"), "IT staff performance", "ADUST-PC-0001", "4.0")
 ok(admin.get("/admin/reports?range=all&print=1"), "Print / Save as PDF", "IT Section report")

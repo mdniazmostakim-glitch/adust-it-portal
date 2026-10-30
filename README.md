@@ -63,11 +63,27 @@ Then, from a campus PC:
 Reminders and backups also run on their own when people use the portal; the systemd timer
 makes sure they run at night too.
 
-### Backup & restore
+### Keeping the data safe (backup & restore)
 
-Backups are in `/var/lib/adust-it-portal/backups` (and downloadable in *Admin → Backups*).
-To restore: stop the service, unzip a backup, copy `portal.db` and `uploads/` into
-`/var/lib/adust-it-portal/`, then start the service.
+All requests, users and history live in **one database file (`portal.db`)** plus the
+**`uploads/`** folder. The portal never deletes requests, so the history stays forever
+as long as these are safe. Follow the 3-2-1 rule:
+
+| Copy | Where | Setting |
+|---|---|---|
+| Live data | Server's own local disk (not a network/Google Drive folder) | `PORTAL_DATABASE`, `PORTAL_UPLOADS` |
+| Backup copy 1 | Same server, separate folder/disk (automatic daily zip) | `PORTAL_BACKUPS` |
+| Backup copy 2 | **Another device**: NAS share, second disk, USB disk or a Google Drive/OneDrive synced folder | `PORTAL_BACKUP_COPY` |
+
+- A backup is made every day; daily backups are kept *N* days (Settings) and **the first
+  backup of every month is kept forever**, in both locations.
+- *Admin → Backups* shows where everything is stored and warns if copy 2 fails.
+- Once a month, also download the newest backup and store it offline (USB/external disk).
+- Don't put the live `portal.db` inside Google Drive/OneDrive — syncing can corrupt it.
+  Backup zips there are fine.
+
+**Restore:** stop the portal, unzip a backup, copy `portal.db` and `uploads/` back to
+their configured locations, start the portal.
 
 ### Useful commands
 

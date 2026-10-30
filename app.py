@@ -23,6 +23,7 @@ import ipaddress
 import os
 import re
 import secrets
+import shutil
 import smtplib
 import sqlite3
 import ssl
@@ -105,6 +106,8 @@ DEFAULT_SETTINGS = {
     "sidebar_side": "left",         # menu position: left or right
     "hk_last": "",
     "last_backup": "",
+    "last_backup_copy": "",
+    "backup_copy_error": "",
 }
 
 MAX_FAILS_PER_ID = 5
@@ -117,6 +120,9 @@ app.config.update(
     DATABASE=env("PORTAL_DATABASE", os.path.join(BASE_DIR, "portal.db")),
     UPLOAD_FOLDER=env("PORTAL_UPLOADS", os.path.join(BASE_DIR, "uploads")),
     BACKUP_FOLDER=env("PORTAL_BACKUPS", os.path.join(BASE_DIR, "backups")),
+    # Second place every backup is copied to (another disk, NAS share, USB drive,
+    # or a Google Drive / OneDrive folder). Empty = no second copy.
+    BACKUP_COPY_FOLDER=env("PORTAL_BACKUP_COPY", ""),
     MAX_CONTENT_LENGTH=25 * 1024 * 1024,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
@@ -2015,9 +2021,9 @@ def admin_recurring():
     return render_template("admin/recurring.html", rows=rows, edit=edit, categories=categories, staff=it_staff())
 
 
-def list_backups():
-    folder = app.config["BACKUP_FOLDER"]
-    if not os.path.isdir(folder):
+def list_backups(folder=None):
+    folder = folder or app.config["BACKUP_FOLDER"]
+    if not folder or not os.path.isdir(folder):
         return []
     files = []
     for name in os.listdir(folder):
@@ -2028,9 +2034,25 @@ def list_backups():
     return sorted(files, key=lambda f: f["name"], reverse=True)
 
 
+def prune_backups(folder):
+    """Retention: every backup from the last N days, plus the first backup of
+    every month forever (so nothing older is ever fully lost). N = 0 keeps all."""
+    keep_days = int_setting("backup_keep_days")
+    if keep_days <= 0:
+        return
+    files = list_backups(folder)  # newest first
+    monthly = {}
+    for f in reversed(files):  # oldest first, so the first of each month wins
+        monthly.setdefault(f["name"][16:22], f["name"])  # adust-it-backup-YYYYMM...
+    cutoff = (datetime.now() - timedelta(days=keep_days)).strftime("%Y-%m-%d %H:%M:%S")
+    for f in files[3:]:
+        if f["time"] < cutoff and f["name"] not in monthly.values():
+            os.remove(os.path.join(folder, f["name"]))
+
+
 def make_backup():
-    """Zip a consistent copy of the database plus all uploaded files, then
-    delete backups older than the retention period (always keeping 3)."""
+    """Zip a consistent copy of the database plus all uploaded files, copy it
+    to the second backup location, then apply the retention policy."""
     folder = app.config["BACKUP_FOLDER"]
     os.makedirs(folder, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -2049,10 +2071,18 @@ def make_backup():
             if os.path.isfile(full):
                 z.write(full, f"uploads/{name}")
     os.remove(tmp)
-    cutoff = (datetime.now() - timedelta(days=int_setting("backup_keep_days"))).strftime("%Y-%m-%d %H:%M:%S")
-    for old in list_backups()[3:]:
-        if old["time"] < cutoff:
-            os.remove(os.path.join(folder, old["name"]))
+    prune_backups(folder)
+    copy_dir = app.config["BACKUP_COPY_FOLDER"]
+    if copy_dir:
+        try:
+            os.makedirs(copy_dir, exist_ok=True)
+            shutil.copy2(path, os.path.join(copy_dir, os.path.basename(path)))
+            prune_backups(copy_dir)
+            set_setting("backup_copy_error", "")
+            set_setting("last_backup_copy", now())
+        except OSError as exc:  # e.g. USB drive unplugged, network share offline
+            app.logger.warning("Backup copy to %s failed: %s", copy_dir, exc)
+            set_setting("backup_copy_error", f"{now()}: {exc}")
     set_setting("last_backup", now())
     return path
 
@@ -2064,8 +2094,13 @@ def admin_backups():
         path = make_backup()
         flash(_("Backup created: {name}", name=os.path.basename(path)), "success")
         return redirect(url_for("admin_backups"))
+    copy_dir = app.config["BACKUP_COPY_FOLDER"]
     return render_template("admin/backups.html", files=list_backups(), last=get_setting("last_backup"),
-                           folder=app.config["BACKUP_FOLDER"], keep=int_setting("backup_keep_days"))
+                           folder=os.path.abspath(app.config["BACKUP_FOLDER"]), keep=int_setting("backup_keep_days"),
+                           copy_dir=copy_dir, copy_files=len(list_backups(copy_dir)) if copy_dir else 0,
+                           last_copy=get_setting("last_backup_copy"), copy_error=get_setting("backup_copy_error"),
+                           db_path=os.path.abspath(app.config["DATABASE"]),
+                           uploads_path=os.path.abspath(app.config["UPLOAD_FOLDER"]))
 
 
 @app.route("/admin/backups/<name>")

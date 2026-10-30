@@ -14,8 +14,9 @@
       <input type="number" name="approval_remind_hours" min="1" value="{{ values.approval_remind_hours }}"></label>
     <label>{{ _('Close resolved requests automatically if the requester does not respond within (days)') }}
       <input type="number" name="auto_close_days" min="1" value="{{ values.auto_close_days }}"></label>
-    <label>{{ _('Keep backups for (days)') }}
-      <input type="number" name="backup_keep_days" min="1" value="{{ values.backup_keep_days }}"></label>
+    <label>{{ _('Keep daily backups for (days)') }}
+      <input type="number" name="backup_keep_days" min="0" value="{{ values.backup_keep_days }}"></label>
+    <p class="hint">{{ _('One backup from every month is always kept forever. 0 = keep every daily backup too.') }}</p>
     <label>{{ _('Menu position') }}
       <select name="sidebar_side">
         <option value="left" {{ 'selected' if values.sidebar_side == 'left' }}>{{ _('Left side') }}</option>

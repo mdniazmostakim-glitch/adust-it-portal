@@ -4,10 +4,28 @@
   <h1>{{ _('Backups') }}</h1>
   <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn primary">{{ _('Create backup now') }}</button></form>
 </div>
+<div class="cols">
 <div class="card">
-  <p>{{ _('A backup (database + all uploaded files) is created automatically every day and kept for {n} days.', n=keep) }}</p>
-  <p>{{ _('Last backup:') }} <strong>{{ last|dt }}</strong> · {{ _('Folder on server:') }} <code>{{ folder }}</code></p>
-  <p class="hint">{{ _('Tip: download a backup regularly and keep it on another computer or drive. To restore, stop the portal, unzip the backup and copy portal.db and the uploads folder back.') }}</p>
+  <h2>{{ _('Where the data is stored') }}</h2>
+  <table class="status-list">
+    <tr><td>{{ _('Database (all requests, users, history)') }}</td><td><code>{{ db_path }}</code></td></tr>
+    <tr><td>{{ _('Attached files') }}</td><td><code>{{ uploads_path }}</code></td></tr>
+    <tr><td>{{ _('Backups (copy 1)') }}</td><td><code>{{ folder }}</code></td></tr>
+    <tr><td>{{ _('Backups (copy 2)') }}</td><td>{% if copy_dir %}<code>{{ copy_dir }}</code>{% else %}<span class="badge st-rejected">{{ _('Not set') }}</span>{% endif %}</td></tr>
+  </table>
+</div>
+<div class="card">
+  <h2>{{ _('Backup status') }}</h2>
+  <p>{{ _('Last backup:') }} <strong>{{ last|dt }}</strong></p>
+  {% if copy_dir %}
+    {% if copy_error %}<div class="flash error">{{ _('The last copy to the second location failed:') }} {{ copy_error }}</div>
+    {% else %}<p>{{ _('Last copy to second location:') }} <strong>{{ last_copy|dt }}</strong> · {{ _('{n} backup(s) there', n=copy_files) }}</p>{% endif %}
+  {% else %}
+    <div class="flash warn">{{ _('Set PORTAL_BACKUP_COPY so every backup is also copied to another disk, computer or Google Drive. One copy on the same computer is not safe.') }}</div>
+  {% endif %}
+  <p class="hint">{{ _('A backup (database + all uploaded files) is created automatically every day. Daily backups are kept for {n} days and one backup from every month is kept forever.', n=keep) }}</p>
+  <p class="hint">{{ _('To restore, stop the portal, unzip the backup and copy portal.db and the uploads folder back.') }}</p>
+</div>
 </div>
 <div class="card">
   <table>
