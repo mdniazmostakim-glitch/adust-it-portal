@@ -3,10 +3,11 @@
 <div class="auth card wide">
   {% include "_auth_head.html" %}
   <h1 class="center">{{ _('Create an account') }}</h1>
+  <p class="muted center">{{ _('Use any email address you check regularly; updates about your requests are sent there.') }}</p>
   <form method="post" class="grid">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label>{{ _('Full name') }} * <input name="name" required value="{{ request.form.name }}"></label>
-    <label>{{ _('University email') }} * <input type="email" name="email" required placeholder="name@{{ domain }}" value="{{ request.form.email }}"></label>
+    <label>{{ _('Email') }} * <input type="email" name="email" required placeholder="{{ '@' ~ domains|join(', @') if domains else 'you@example.com' }}" value="{{ request.form.email }}"></label>
     <label>{{ _('User ID / Employee ID') }} <input name="login_id" value="{{ request.form.login_id }}"></label>
     <label>{{ _('Mobile') }} <input name="phone" placeholder="01XXXXXXXXX" value="{{ request.form.phone }}"></label>
     <label>{{ _('Department / Office') }} * {{ dept_select('department', request.form.department) }}</label>

@@ -6,8 +6,8 @@
   <p class="muted center">{{ _('Send work requests to the IT section and track their progress.') }}</p>
   <form method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label>{{ _('University email or user ID') }}
-      <input name="identifier" required autofocus autocomplete="username" placeholder="name@{{ domain }} {{ _('or employee ID') }}" value="{{ request.form.identifier }}"></label>
+    <label>{{ _('Email or user ID') }}
+      <input name="identifier" required autofocus autocomplete="username" placeholder="you@example.com {{ _('or employee ID') }}" value="{{ request.form.identifier }}"></label>
     <label>{{ _('Password') }} <input type="password" name="password" required autocomplete="current-password"></label>
     {% if webmail %}<p class="hint">{{ _('You can use your @{domain} webmail password.', domain=domain) }}</p>{% endif %}
     <button class="btn primary full">{{ _('Sign in') }}</button>

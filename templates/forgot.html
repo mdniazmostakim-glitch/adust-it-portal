@@ -6,7 +6,7 @@
   <p class="muted center">{{ _('Enter your email or user ID. We will email you a link to set a new password.') }}</p>
   <form method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label>{{ _('University email or user ID') }} <input name="identifier" required autofocus></label>
+    <label>{{ _('Email or user ID') }} <input name="identifier" required autofocus></label>
     <button class="btn primary full">{{ _('Send reset link') }}</button>
   </form>
   <p class="center"><a href="{{ url_for('login') }}">← {{ _('Back to sign in') }}</a></p>

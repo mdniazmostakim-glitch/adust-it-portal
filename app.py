@@ -122,6 +122,10 @@ app.config.update(
     SESSION_COOKIE_SECURE=env("PORTAL_HTTPS") == "1",
     PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
     EMAIL_DOMAIN=env("PORTAL_EMAIL_DOMAIN", "adust.edu.bd").lower(),
+    # Empty = any email address (personal or institutional) may register;
+    # access is still limited to the university networks.
+    ALLOWED_EMAIL_DOMAINS=[d.strip().lower().lstrip("@") for d in env("PORTAL_ALLOWED_EMAIL_DOMAINS", "").split(",")
+                           if d.strip()],
     BASE_URL=env("PORTAL_BASE_URL", "").rstrip("/"),
     AUTO_HOUSEKEEPING=env("PORTAL_AUTO_HOUSEKEEPING", "1") == "1",
 )
@@ -691,6 +695,14 @@ def in_university_domain(email):
     return email.endswith("@" + app.config["EMAIL_DOMAIN"])
 
 
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def email_allowed(email):
+    domains = app.config["ALLOWED_EMAIL_DOMAINS"]
+    return not domains or any(email.endswith("@" + d) for d in domains)
+
+
 def locked_out(ident):
     since = now(timedelta(minutes=-LOCKOUT_MINUTES))
     db = get_db()
@@ -770,8 +782,11 @@ def register():
         error = None
         if not all(form.get(k, "").strip() for k in ("name", "email", "department")):
             error = _("Name, email and department are required.")
-        elif not in_university_domain(email):
-            error = _("Please use your university email (@{domain}).", domain=app.config["EMAIL_DOMAIN"])
+        elif not EMAIL_RE.match(email):
+            error = _("Please enter a valid email address.")
+        elif not email_allowed(email):
+            error = _("Please use an email address from: {domains}",
+                      domains=", ".join("@" + d for d in app.config["ALLOWED_EMAIL_DOMAINS"]))
         elif len(form.get("password", "")) < 8:
             error = _("Password must be at least 8 characters.")
         elif form.get("password") != form.get("confirm"):
@@ -791,7 +806,7 @@ def register():
             except sqlite3.IntegrityError:
                 error = _("An account with that email or user ID already exists.")
         flash(error, "error")
-    return render_template("register.html", domain=app.config["EMAIL_DOMAIN"])
+    return render_template("register.html", domains=app.config["ALLOWED_EMAIL_DOMAINS"])
 
 
 def reset_serializer():
@@ -1792,7 +1807,7 @@ def admin_users():
         uid = f.get("id", "")
         role = f.get("role", "user")
         email = f.get("email", "").strip().lower()
-        if role not in ROLES or not f.get("name", "").strip() or not email:
+        if role not in ROLES or not f.get("name", "").strip() or not EMAIL_RE.match(email):
             flash(_("Name, email and a valid role are required."), "error")
             return redirect(url_for("admin_users"))
         fields = (f.get("login_id", "").strip().lower() or None, f["name"].strip(), email,

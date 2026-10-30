@@ -46,6 +46,16 @@ u = client()
 ok(post(u, "/register", {"name": "Mim Akter", "email": "mim@adust.edu.bd", "department": "Computer Science & Engineering (CSE)", "phone": "01811000000", "password": "secret123", "confirm": "secret123"}), "Account created")
 ok(login(u, "mim@adust.edu.bd", "secret123"), "Welcome, Mim")
 
+# ---------- any email (personal or institutional) can register and sign in
+g = client()
+ok(post(g, "/register", {"name": "Personal Mail", "email": "someone.personal@gmail.com", "department": "Library", "password": "secret123", "confirm": "secret123"}), "Account created")
+ok(login(g, "someone.personal@gmail.com", "secret123"), "Welcome, Personal")
+ok(post(client(), "/register", {"name": "Bad", "email": "not-an-email", "department": "Library", "password": "secret123", "confirm": "secret123"}), "valid email")
+app.config["ALLOWED_EMAIL_DOMAINS"] = ["adust.edu.bd"]
+ok(post(client(), "/register", {"name": "Y", "email": "y@yahoo.com", "department": "Library", "password": "secret123", "confirm": "secret123"}), "@adust.edu.bd")
+app.config["ALLOWED_EMAIL_DOMAINS"] = []
+print("any-email ok")
+
 # ---------- 1. lock-out after 5 failures
 x = client("10.20.0.77")
 for i in range(5): login(x, "mim@adust.edu.bd", "wrong")
