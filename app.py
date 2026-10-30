@@ -102,6 +102,7 @@ DEFAULT_SETTINGS = {
     "auto_close_days": "7",         # resolved and not confirmed -> closed automatically
     "backup_keep_days": "14",
     "sms_urgent": "1",
+    "sidebar_side": "left",         # menu position: left or right
     "hk_last": "",
     "last_backup": "",
 }
@@ -387,6 +388,7 @@ app.jinja_env.globals.update(
     is_it=is_it, is_admin=is_admin, unread_count=unread_count, approvals_count=approvals_count,
     active_announcements=active_announcements, departments=departments,
     now_year=lambda: date.today().year, today=lambda: date.today().isoformat(),
+    sidebar_side=lambda: get_setting("sidebar_side"),
 )
 
 
@@ -2100,6 +2102,8 @@ def admin_settings():
                 if f.get(key, "").isdigit():
                     set_setting(key, int(f[key]))
             set_setting("sms_urgent", "1" if f.get("sms_urgent") else "0")
+            if f.get("sidebar_side") in ("left", "right"):
+                set_setting("sidebar_side", f["sidebar_side"])
             flash(_("Settings saved."), "success")
         return redirect(url_for("admin_settings"))
     status = {

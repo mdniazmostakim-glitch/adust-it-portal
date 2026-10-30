@@ -1,3 +1,7 @@
+{% from "_icons.html" import icon %}
+{%- macro nav(endpoint, label, ic, also=(), badge=0) -%}
+<a href="{{ url_for(endpoint) }}" class="nav-item {{ 'active' if request.endpoint == endpoint or request.endpoint in also }}">{{ icon(ic) }}<span>{{ label }}</span>{% if badge %}<span class="pill">{{ badge }}</span>{% endif %}</a>
+{%- endmacro -%}
 <!doctype html>
 <html lang="{{ g.lang }}">
 <head>
@@ -7,79 +11,87 @@
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/favicon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
-<header class="topbar">
-  <div class="wrap topbar-inner">
-    <a class="brand" href="{{ url_for('index') }}">
-      <img class="brand-mark" src="{{ url_for('static', filename='img/adust-logo.png') }}" alt="ADUST logo">
-      <span class="brand-text"><strong>{{ _('ADUST IT Section') }}</strong><br><small>{{ _('Service Request Portal') }}</small></span>
+<body class="{{ 'app' if g.user else 'guest' }} {{ 'sidebar-right' if sidebar_side() == 'right' }}">
+<div class="shell">
+{% if g.user %}
+<aside class="sidebar" id="sidebar"><div class="sidebar-inner">
+  <a class="brand" href="{{ url_for('index') }}">
+    <img src="{{ url_for('static', filename='img/adust-logo.png') }}" alt="ADUST logo">
+    <span><strong>{{ _('ADUST IT Section') }}</strong><small>{{ _('Service Request Portal') }}</small></span>
+  </a>
+  <a class="btn primary new-btn" href="{{ url_for('new_ticket') }}">{{ icon('plus') }} {{ _('New request') }}</a>
+  <nav class="nav">
+    {{ nav('index', _('Dashboard'), 'home') }}
+    {{ nav('ticket_list', _('All requests') if is_it() else _('My requests'), 'list', ('ticket_detail', 'ticket_print')) }}
+    {{ nav('help_index', _('Help centre'), 'help', ('help_article',)) }}
+    {% if g.user.is_approver or is_admin() %}{{ nav('approvals', _('Approvals'), 'approve', badge=approvals_count()) }}{% endif %}
+    {% if is_it() %}
+    <div class="nav-label">{{ _('IT section') }}</div>
+    {{ nav('assets_index', _('Devices (assets)'), 'monitor', ('asset_detail', 'asset_edit', 'assets_import')) }}
+    {{ nav('admin_reports', _('Reports'), 'chart') }}
+    {{ nav('admin_announcements', _('Announcements'), 'megaphone') }}
+    {{ nav('help_edit', _('Write help article'), 'pen') }}
+    {% endif %}
+    {% if is_admin() %}
+    <div class="nav-label">{{ _('Administration') }}</div>
+    {{ nav('admin_users', _('Users'), 'users') }}
+    {{ nav('admin_departments', _('Departments'), 'building') }}
+    {{ nav('admin_categories', _('Categories'), 'tag') }}
+    {{ nav('admin_recurring', _('Recurring maintenance'), 'repeat') }}
+    {{ nav('admin_network', _('Network access'), 'shield') }}
+    {{ nav('admin_backups', _('Backups'), 'database') }}
+    {{ nav('admin_settings', _('Settings'), 'settings') }}
+    {% endif %}
+  </nav>
+  <div class="side-user">
+    <a class="who" href="{{ url_for('profile') }}">
+      <span class="avatar">{{ (g.user.name|first_name)[:1]|upper }}</span>
+      <span><strong>{{ g.user.name }}</strong><small>{{ _(ROLES[g.user.role]) }}{% if g.user.is_approver %} · {{ _('Dept. head') }}{% endif %}</small></span>
     </a>
-    <button class="menu-btn" onclick="document.body.classList.toggle('nav-open')" aria-label="Menu">☰</button>
-    <nav>
-      {% if g.user %}
-      <a href="{{ url_for('index') }}">{{ _('Dashboard') }}</a>
-      <a href="{{ url_for('new_ticket') }}">+ {{ _('New request') }}</a>
-      <a href="{{ url_for('ticket_list') }}">{{ _('All requests') if is_it() else _('My requests') }}</a>
-      <a href="{{ url_for('help_index') }}">{{ _('Help') }}</a>
-      {% if g.user.is_approver or is_admin() %}{% set ap = approvals_count() %}
-      <a href="{{ url_for('approvals') }}">{{ _('Approvals') }}{% if ap %} <span class="pill">{{ ap }}</span>{% endif %}</a>
-      {% endif %}
-      {% if is_it() %}
-      <details class="dropdown">
-        <summary>{{ _('IT') }}</summary>
-        <div class="menu">
-          <a href="{{ url_for('assets_index') }}">{{ _('Devices (assets)') }}</a>
-          <a href="{{ url_for('admin_reports') }}">{{ _('Reports') }}</a>
-          <a href="{{ url_for('admin_announcements') }}">{{ _('Announcements') }}</a>
-          <a href="{{ url_for('help_edit') }}">{{ _('Write help article') }}</a>
-        </div>
-      </details>
-      {% endif %}
-      {% if is_admin() %}
-      <details class="dropdown">
-        <summary>{{ _('Admin') }}</summary>
-        <div class="menu">
-          <a href="{{ url_for('admin_users') }}">{{ _('Users') }}</a>
-          <a href="{{ url_for('admin_departments') }}">{{ _('Departments') }}</a>
-          <a href="{{ url_for('admin_categories') }}">{{ _('Categories') }}</a>
-          <a href="{{ url_for('admin_recurring') }}">{{ _('Recurring maintenance') }}</a>
-          <a href="{{ url_for('admin_network') }}">{{ _('Network access') }}</a>
-          <a href="{{ url_for('admin_backups') }}">{{ _('Backups') }}</a>
-          <a href="{{ url_for('admin_settings') }}">{{ _('Settings') }}</a>
-        </div>
-      </details>
-      {% endif %}
-      {% endif %}
-      <a class="lang" href="{{ url_for('set_language', code='en' if g.lang == 'bn' else 'bn') }}">{{ 'English' if g.lang == 'bn' else 'বাংলা' }}</a>
-      {% if g.user %}
+    <form method="post" action="{{ url_for('logout') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="icon-btn" title="{{ _('Sign out') }}" aria-label="{{ _('Sign out') }}">{{ icon('logout') }}</button>
+    </form>
+  </div>
+</div></aside>
+<div class="scrim" onclick="document.body.classList.remove('nav-open')"></div>
+{% endif %}
+
+<div class="main">
+  {% if g.user %}
+  <header class="topbar">
+    <button class="icon-btn menu-btn" onclick="document.body.classList.toggle('nav-open')" aria-label="Menu">{{ icon('menu') }}</button>
+    <div class="top-uni"><img src="{{ url_for('static', filename='img/adust-logo.png') }}" alt=""><span>Atish Dipankar University of Science &amp; Technology</span></div>
+    <div class="top-actions">
+      <a class="chip-btn" href="{{ url_for('set_language', code='en' if g.lang == 'bn' else 'bn') }}">{{ icon('globe') }}<span>{{ 'English' if g.lang == 'bn' else 'বাংলা' }}</span></a>
       {% set unread = unread_count() %}
-      <a href="{{ url_for('notifications') }}" class="bell" title="{{ _('Notifications') }}">🔔<span id="bell-count" class="count"{% if not unread %} hidden{% endif %}>{{ unread }}</span></a>
-      <a href="{{ url_for('profile') }}" title="{{ _('My profile') }}">{{ g.user.name|first_name }}</a>
-      <form method="post" action="{{ url_for('logout') }}" class="inline">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="link">{{ _('Sign out') }}</button>
-      </form>
-      {% endif %}
-    </nav>
-  </div>
-</header>
-{% for a in active_announcements() %}
-<div class="announce {{ a.level }}"><div class="wrap">📢 {{ a.message }}{% if a.ends_at %} <small>({{ _('until') }} {{ a.ends_at|dt }})</small>{% endif %}</div></div>
-{% endfor %}
-<main class="wrap">
-  {% with msgs = get_flashed_messages(with_categories=true) %}
-    {% for cat, msg in msgs %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
-  {% endwith %}
-  {% block content %}{% endblock %}
-</main>
-<footer class="footer">
-  <div class="wrap">
-    <img src="{{ url_for('static', filename='img/adust-logo.png') }}" alt="" width="40" height="40">
+      <a href="{{ url_for('notifications') }}" class="icon-btn bell" title="{{ _('Notifications') }}">{{ icon('bell') }}<span id="bell-count" class="count"{% if not unread %} hidden{% endif %}>{{ unread }}</span></a>
+      <a href="{{ url_for('profile') }}" class="avatar small" title="{{ _('My profile') }}">{{ (g.user.name|first_name)[:1]|upper }}</a>
+    </div>
+  </header>
+  {% else %}
+  <div class="guest-top"><a class="chip-btn" href="{{ url_for('set_language', code='en' if g.lang == 'bn' else 'bn') }}">{{ icon('globe') }}<span>{{ 'English' if g.lang == 'bn' else 'বাংলা' }}</span></a></div>
+  {% endif %}
+
+  {% for a in active_announcements() %}
+  <div class="announce {{ a.level }}">{{ icon('megaphone') }}<span>{{ a.message }}{% if a.ends_at %} <small>({{ _('until') }} {{ a.ends_at|dt }})</small>{% endif %}</span></div>
+  {% endfor %}
+
+  <main class="content">
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in msgs %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    {% if not g.user %}<img src="{{ url_for('static', filename='img/adust-logo.png') }}" alt="" width="36" height="36">{% endif %}
     <div class="footer-name">Atish Dipankar University of Science &amp; Technology</div>
-    <div class="footer-meta">{{ _('IT Section · Service Request Portal · University network only') }}</div>
-    <div class="footer-copy">© {{ now_year() }} ADUST IT Section</div>
-  </div>
-</footer>
+    <div>{{ _('IT Section · Service Request Portal · University network only') }} · © {{ now_year() }}</div>
+  </footer>
+</div>
+</div>
+
 {% if g.user %}
 <script>
 (function () {
@@ -105,9 +117,6 @@
   if ('Notification' in window && Notification.permission === 'default') {
     document.addEventListener('click', function ask() { Notification.requestPermission(); document.removeEventListener('click', ask); });
   }
-  document.addEventListener('click', function (e) {  // close open dropdowns when clicking elsewhere
-    document.querySelectorAll('details.dropdown[open]').forEach(function (d) { if (!d.contains(e.target)) d.open = false; });
-  });
   poll(); setInterval(poll, 30000);
 })();
 </script>

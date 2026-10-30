@@ -16,6 +16,11 @@
       <input type="number" name="auto_close_days" min="1" value="{{ values.auto_close_days }}"></label>
     <label>{{ _('Keep backups for (days)') }}
       <input type="number" name="backup_keep_days" min="1" value="{{ values.backup_keep_days }}"></label>
+    <label>{{ _('Menu position') }}
+      <select name="sidebar_side">
+        <option value="left" {{ 'selected' if values.sidebar_side == 'left' }}>{{ _('Left side') }}</option>
+        <option value="right" {{ 'selected' if values.sidebar_side == 'right' }}>{{ _('Right side') }}</option>
+      </select></label>
     <label class="check"><input type="checkbox" name="sms_urgent" value="1" {{ 'checked' if values.sms_urgent == '1' }}> {{ _('Send SMS to IT staff for urgent requests and escalations') }}</label>
     <button class="btn primary">{{ _('Save settings') }}</button>
   </form>
