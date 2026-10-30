@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ g.lang }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}IT Service Portal{% endblock %} · ADUST IT Section</title>
+  <title>{% block title %}{{ _('IT Service Portal') }}{% endblock %} · ADUST IT Section</title>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/favicon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
@@ -12,36 +12,60 @@
   <div class="wrap topbar-inner">
     <a class="brand" href="{{ url_for('index') }}">
       <img class="brand-mark" src="{{ url_for('static', filename='img/adust-logo.png') }}" alt="ADUST logo">
-      <span class="brand-text"><strong>ADUST IT Section</strong><br><small>Service Request Portal</small></span>
+      <span class="brand-text"><strong>{{ _('ADUST IT Section') }}</strong><br><small>{{ _('Service Request Portal') }}</small></span>
     </a>
-    {% if g.user %}
     <button class="menu-btn" onclick="document.body.classList.toggle('nav-open')" aria-label="Menu">☰</button>
     <nav>
-      <a href="{{ url_for('index') }}">Dashboard</a>
-      <a href="{{ url_for('new_ticket') }}">+ New request</a>
-      <a href="{{ url_for('ticket_list') }}">{{ 'All requests' if is_it() else 'My requests' }}</a>
-      {% if is_it() %}<a href="{{ url_for('admin_reports') }}">Reports</a>{% endif %}
-      {% if g.user.role == 'admin' %}
+      {% if g.user %}
+      <a href="{{ url_for('index') }}">{{ _('Dashboard') }}</a>
+      <a href="{{ url_for('new_ticket') }}">+ {{ _('New request') }}</a>
+      <a href="{{ url_for('ticket_list') }}">{{ _('All requests') if is_it() else _('My requests') }}</a>
+      <a href="{{ url_for('help_index') }}">{{ _('Help') }}</a>
+      {% if g.user.is_approver or is_admin() %}{% set ap = approvals_count() %}
+      <a href="{{ url_for('approvals') }}">{{ _('Approvals') }}{% if ap %} <span class="pill">{{ ap }}</span>{% endif %}</a>
+      {% endif %}
+      {% if is_it() %}
       <details class="dropdown">
-        <summary>Admin</summary>
+        <summary>{{ _('IT') }}</summary>
         <div class="menu">
-          <a href="{{ url_for('admin_users') }}">Users</a>
-          <a href="{{ url_for('admin_categories') }}">Categories</a>
-          <a href="{{ url_for('admin_network') }}">Network access</a>
+          <a href="{{ url_for('assets_index') }}">{{ _('Devices (assets)') }}</a>
+          <a href="{{ url_for('admin_reports') }}">{{ _('Reports') }}</a>
+          <a href="{{ url_for('admin_announcements') }}">{{ _('Announcements') }}</a>
+          <a href="{{ url_for('help_edit') }}">{{ _('Write help article') }}</a>
         </div>
       </details>
       {% endif %}
+      {% if is_admin() %}
+      <details class="dropdown">
+        <summary>{{ _('Admin') }}</summary>
+        <div class="menu">
+          <a href="{{ url_for('admin_users') }}">{{ _('Users') }}</a>
+          <a href="{{ url_for('admin_departments') }}">{{ _('Departments') }}</a>
+          <a href="{{ url_for('admin_categories') }}">{{ _('Categories') }}</a>
+          <a href="{{ url_for('admin_recurring') }}">{{ _('Recurring maintenance') }}</a>
+          <a href="{{ url_for('admin_network') }}">{{ _('Network access') }}</a>
+          <a href="{{ url_for('admin_backups') }}">{{ _('Backups') }}</a>
+          <a href="{{ url_for('admin_settings') }}">{{ _('Settings') }}</a>
+        </div>
+      </details>
+      {% endif %}
+      {% endif %}
+      <a class="lang" href="{{ url_for('set_language', code='en' if g.lang == 'bn' else 'bn') }}">{{ 'English' if g.lang == 'bn' else 'বাংলা' }}</a>
+      {% if g.user %}
       {% set unread = unread_count() %}
-      <a href="{{ url_for('notifications') }}" class="bell" title="Notifications">🔔<span id="bell-count" class="count"{% if not unread %} hidden{% endif %}>{{ unread }}</span></a>
-      <a href="{{ url_for('profile') }}" title="Profile">{{ g.user.name.split()[0] }}</a>
+      <a href="{{ url_for('notifications') }}" class="bell" title="{{ _('Notifications') }}">🔔<span id="bell-count" class="count"{% if not unread %} hidden{% endif %}>{{ unread }}</span></a>
+      <a href="{{ url_for('profile') }}" title="{{ _('My profile') }}">{{ g.user.name|first_name }}</a>
       <form method="post" action="{{ url_for('logout') }}" class="inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="link">Sign out</button>
+        <button class="link">{{ _('Sign out') }}</button>
       </form>
+      {% endif %}
     </nav>
-    {% endif %}
   </div>
 </header>
+{% for a in active_announcements() %}
+<div class="announce {{ a.level }}"><div class="wrap">📢 {{ a.message }}{% if a.ends_at %} <small>({{ _('until') }} {{ a.ends_at|dt }})</small>{% endif %}</div></div>
+{% endfor %}
 <main class="wrap">
   {% with msgs = get_flashed_messages(with_categories=true) %}
     {% for cat, msg in msgs %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
@@ -52,16 +76,16 @@
   <div class="wrap">
     <img src="{{ url_for('static', filename='img/adust-logo.png') }}" alt="" width="40" height="40">
     <div class="footer-name">Atish Dipankar University of Science &amp; Technology</div>
-    <div class="footer-meta">IT Section · Service Request Portal · University network only</div>
+    <div class="footer-meta">{{ _('IT Section · Service Request Portal · University network only') }}</div>
     <div class="footer-copy">© {{ now_year() }} ADUST IT Section</div>
   </div>
 </footer>
 {% if g.user %}
 <script>
 (function () {
-  var last = Number(localStorageGet('lastNotif') || 0), bell = document.getElementById('bell-count');
-  function localStorageGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
-  function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  var last = Number(get('lastNotif') || 0), bell = document.getElementById('bell-count');
   function poll() {
     fetch('{{ url_for("api_notifications") }}?since=' + last, { credentials: 'same-origin' })
       .then(function (r) { return r.ok ? r.json() : null; })
@@ -71,16 +95,19 @@
         document.title = (d.unread ? '(' + d.unread + ') ' : '') + document.title.replace(/^\(\d+\) /, '');
         d.latest.forEach(function (n) {
           if (n.id > last && last && 'Notification' in window && Notification.permission === 'granted') {
-            var note = new Notification('ADUST IT Portal', { body: n.message });
+            var note = new Notification('ADUST IT Portal', { body: n.message, icon: '{{ url_for("static", filename="img/favicon.png") }}' });
             note.onclick = function () { location.href = '/tickets/' + n.ticket_id; };
           }
         });
-        if (d.latest.length) { last = Math.max(last, d.latest[0].id); localStorageSet('lastNotif', last); }
+        if (d.latest.length) { last = Math.max(last, d.latest[0].id); set('lastNotif', last); }
       }).catch(function () {});
   }
   if ('Notification' in window && Notification.permission === 'default') {
     document.addEventListener('click', function ask() { Notification.requestPermission(); document.removeEventListener('click', ask); });
   }
+  document.addEventListener('click', function (e) {  // close open dropdowns when clicking elsewhere
+    document.querySelectorAll('details.dropdown[open]').forEach(function (d) { if (!d.contains(e.target)) d.open = false; });
+  });
   poll(); setInterval(poll, 30000);
 })();
 </script>

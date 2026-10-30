@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% block title %}{{ _('Set a new password') }}{% endblock %}
+{% block content %}
+<div class="auth card">
+  {% include "_auth_head.html" %}
+  <h1 class="center">{{ _('Set a new password') }}</h1>
+  <p class="muted center">{{ user.email }}</p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>{{ _('New password') }} <input type="password" name="new" minlength="8" required autofocus></label>
+    <label>{{ _('Confirm new password') }} <input type="password" name="confirm" minlength="8" required></label>
+    <button class="btn primary full">{{ _('Save password') }}</button>
+  </form>
+</div>
+{% endblock %}

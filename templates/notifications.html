@@ -1,7 +1,7 @@
-{% extends "base.html" %}{% block title %}Notifications{% endblock %}
+{% extends "base.html" %}{% block title %}{{ _('Notifications') }}{% endblock %}
 {% block content %}
-<div class="row-between"><h1>Notifications</h1>
-  <form method="post" action="{{ url_for('notifications_read_all') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn small">Mark all as read</button></form>
+<div class="row-between"><h1>{{ _('Notifications') }}</h1>
+  <form method="post" action="{{ url_for('notifications_read_all') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn small">{{ _('Mark all as read') }}</button></form>
 </div>
 <div class="card">
   {% for n in notes %}
@@ -9,6 +9,6 @@
     <span>{% if n.code %}<span class="code">{{ n.code }}</span> {% endif %}{{ n.message }}</span>
     <small class="muted">{{ n.created_at|dt }}</small>
   </a>
-  {% else %}<p class="muted">No notifications yet.</p>{% endfor %}
+  {% else %}<p class="muted">{{ _('No notifications yet.') }}</p>{% endfor %}
 </div>
 {% endblock %}

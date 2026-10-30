@@ -1,0 +1,30 @@
+/* Job card & printable report: A4 friendly, black-on-white */
+body { margin: 0; background: #e9ecf1; font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Bengali", sans-serif; color: #111; }
+.toolbar { text-align: center; padding: 14px; }
+.toolbar button { font: inherit; font-weight: 600; padding: 9px 18px; border-radius: 7px; border: 0; background: #1f3461; color: #fff; cursor: pointer; }
+.sheet { background: #fff; max-width: 794px; margin: 0 auto 30px; padding: 36px 40px; box-shadow: 0 2px 12px rgba(0,0,0,.12); box-sizing: border-box; }
+.sheet.wide { max-width: 1050px; }
+.doc-head { display: grid; grid-template-columns: 56px 1fr auto; gap: 14px; align-items: center; border-bottom: 3px solid #1f3461; padding-bottom: 12px; margin-bottom: 16px; }
+.doc-head img { width: 56px; height: 56px; }
+.doc-head strong { color: #1f3461; font-size: 1.1em; }
+.doc-code { text-align: right; font-family: ui-monospace, Consolas, monospace; font-weight: 700; font-size: 1.1em; }
+.doc-code small { font-family: inherit; font-weight: 400; color: #555; }
+.sheet h1 { font-size: 1.3em; margin: 0 0 12px; }
+.sheet h2 { font-size: 1em; margin: 18px 0 6px; text-transform: uppercase; letter-spacing: .04em; color: #1f3461; }
+.kv, .log { width: 100%; border-collapse: collapse; }
+.kv th, .kv td, .log td { border: 1px solid #bbb; padding: 6px 8px; text-align: left; vertical-align: top; }
+.kv th { background: #f1f3f7; width: 16%; font-weight: 600; }
+.box { border: 1px solid #bbb; padding: 10px; min-height: 40px; white-space: pre-wrap; }
+.box.lines { min-height: 120px; background: repeating-linear-gradient(#fff 0 27px, #ddd 27px 28px); }
+.nowrap { white-space: nowrap; }
+.signs { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 50px; }
+.signs span { display: block; border-top: 1px solid #333; margin-bottom: 4px; }
+.report-print .stats { grid-template-columns: repeat(4, 1fr); }
+.report-print .cols { grid-template-columns: 1fr 1fr; }
+.report-print .card { break-inside: avoid; box-shadow: none; }
+@media print {
+  body { background: #fff; }
+  .toolbar { display: none; }
+  .sheet { box-shadow: none; margin: 0; padding: 0; max-width: none; }
+  @page { size: A4; margin: 14mm; }
+}

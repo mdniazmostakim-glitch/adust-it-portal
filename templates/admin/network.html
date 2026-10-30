@@ -1,32 +1,32 @@
-{% extends "base.html" %}{% block title %}Network access{% endblock %}
+{% extends "base.html" %}{% block title %}{{ _('Network access') }}{% endblock %}
 {% block content %}
-<h1>University network access</h1>
+<h1>{{ _('University network access') }}</h1>
 <div class="card">
   {% if not rows and not env_nets %}
-  <div class="flash error"><strong>Setup mode:</strong> no networks are configured, so the portal is currently reachable from <em>any</em> IP. Add the university's IP range(s) below to lock it down.</div>
+  <div class="flash error"><strong>{{ _('Setup mode:') }}</strong> {{ _('no networks are configured, so the portal is currently reachable from any IP. Add the university IP range(s) below to lock it down.') }}</div>
   {% else %}
-  <div class="flash success">Only the networks below (and the server itself) can open the portal. Everyone else sees an “Access restricted” page.</div>
+  <div class="flash success">{{ _('Only the networks below (and the server itself) can open the portal. Everyone else sees an "Access restricted" page.') }}</div>
   {% endif %}
-  <p>Your current IP: <code>{{ g.client_ip }}</code></p>
+  <p>{{ _('Your current IP:') }} <code>{{ g.client_ip }}</code></p>
   <form method="post" class="filters">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input name="cidr" required placeholder="IP or range, e.g. 103.110.10.0/24 or 192.168.0.0/16">
-    <input name="label" placeholder="Label, e.g. Main campus LAN">
-    <button class="btn primary">Allow</button>
+    <input name="cidr" required placeholder="{{ _('IP or range, e.g. 103.110.10.0/24 or 192.168.0.0/16') }}">
+    <input name="label" placeholder="{{ _('Label, e.g. Main campus LAN') }}">
+    <button class="btn primary">{{ _('Allow') }}</button>
   </form>
-  <p class="hint">Add the university's public IP(s) (as seen by the server) and/or internal LAN ranges. A single IP is fine: 103.110.10.25</p>
+  <p class="hint">{{ _('Add the university public IP(s) as seen by the server and/or the internal LAN ranges. A single IP is fine: 103.110.10.25') }}</p>
 </div>
 <div class="card">
   <table>
-    <thead><tr><th>Network</th><th>Label</th><th></th></tr></thead>
+    <thead><tr><th>{{ _('Network') }}</th><th>{{ _('Label') }}</th><th></th></tr></thead>
     <tbody>
-    {% for n in env_nets %}<tr><td><code>{{ n }}</code></td><td class="muted">From server config (PORTAL_ALLOWED_NETWORKS)</td><td></td></tr>{% endfor %}
+    {% for n in env_nets %}<tr><td><code>{{ n }}</code></td><td class="muted">{{ _('From server config (PORTAL_ALLOWED_NETWORKS)') }}</td><td></td></tr>{% endfor %}
     {% for r in rows %}
     <tr><td><code>{{ r.cidr }}</code></td><td>{{ r.label }}</td>
-      <td><form method="post" class="inline" onsubmit="return confirm('Remove {{ r.cidr }}?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn small danger" name="delete" value="{{ r.id }}">Remove</button></form></td></tr>
+      <td><form method="post" class="inline" onsubmit="return confirm('{{ _('Remove') }} {{ r.cidr }}?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn small danger" name="delete" value="{{ r.id }}">{{ _('Remove') }}</button></form></td></tr>
     {% endfor %}
-    {% if not rows and not env_nets %}<tr><td colspan="3" class="muted">None yet.</td></tr>{% endif %}
+    {% if not rows and not env_nets %}<tr><td colspan="3" class="muted">{{ _('None yet.') }}</td></tr>{% endif %}
     </tbody>
   </table>
 </div>

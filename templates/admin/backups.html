@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% block title %}{{ _('Backups') }}{% endblock %}
+{% block content %}
+<div class="row-between">
+  <h1>{{ _('Backups') }}</h1>
+  <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn primary">{{ _('Create backup now') }}</button></form>
+</div>
+<div class="card">
+  <p>{{ _('A backup (database + all uploaded files) is created automatically every day and kept for {n} days.', n=keep) }}</p>
+  <p>{{ _('Last backup:') }} <strong>{{ last|dt }}</strong> · {{ _('Folder on server:') }} <code>{{ folder }}</code></p>
+  <p class="hint">{{ _('Tip: download a backup regularly and keep it on another computer or drive. To restore, stop the portal, unzip the backup and copy portal.db and the uploads folder back.') }}</p>
+</div>
+<div class="card">
+  <table>
+    <thead><tr><th>{{ _('File') }}</th><th>{{ _('Created') }}</th><th>{{ _('Size') }}</th><th></th></tr></thead>
+    <tbody>
+    {% for f in files %}
+    <tr><td data-label="{{ _('File') }}"><code>{{ f.name }}</code></td><td data-label="{{ _('Created') }}">{{ f.time|dt }}</td><td data-label="{{ _('Size') }}">{{ f.size|filesize }}</td>
+      <td><a class="btn small" href="{{ url_for('admin_backup_download', name=f.name) }}">⬇ {{ _('Download') }}</a></td></tr>
+    {% else %}<tr><td colspan="4" class="muted">{{ _('No backups yet.') }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

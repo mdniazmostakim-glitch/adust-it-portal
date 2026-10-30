@@ -1,21 +1,18 @@
-{% extends "base.html" %}{% block title %}Sign in{% endblock %}
+{% extends "base.html" %}{% block title %}{{ _('Sign in') }}{% endblock %}
 {% block content %}
 <div class="auth card">
-  <div class="auth-head">
-    <img class="auth-logo" src="{{ url_for('static', filename='img/adust-logo.png') }}" alt="ADUST logo">
-    <div class="auth-uni">Atish Dipankar University<br>of Science &amp; Technology</div>
-    <div class="auth-kicker"><span>IT Section · Service Request Portal</span></div>
-  </div>
-  <h1 class="center">Sign in</h1>
-  <p class="muted center">Send work requests to the IT section and track their progress.</p>
+  {% include "_auth_head.html" %}
+  <h1 class="center">{{ _('Sign in') }}</h1>
+  <p class="muted center">{{ _('Send work requests to the IT section and track their progress.') }}</p>
   <form method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label>University email or user ID
-      <input name="identifier" required autofocus autocomplete="username" placeholder="name@{{ domain }} or employee ID" value="{{ request.form.identifier }}"></label>
-    <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
-    {% if webmail %}<p class="hint">You can use your <strong>@{{ domain }} webmail password</strong>.</p>{% endif %}
-    <button class="btn primary full">Sign in</button>
+    <label>{{ _('University email or user ID') }}
+      <input name="identifier" required autofocus autocomplete="username" placeholder="name@{{ domain }} {{ _('or employee ID') }}" value="{{ request.form.identifier }}"></label>
+    <label>{{ _('Password') }} <input type="password" name="password" required autocomplete="current-password"></label>
+    {% if webmail %}<p class="hint">{{ _('You can use your @{domain} webmail password.', domain=domain) }}</p>{% endif %}
+    <button class="btn primary full">{{ _('Sign in') }}</button>
   </form>
-  <p class="muted center">New here? <a href="{{ url_for('register') }}">Create an account</a></p>
+  <p class="center"><a href="{{ url_for('forgot_password') }}">{{ _('Forgot password?') }}</a></p>
+  <p class="muted center">{{ _('New here?') }} <a href="{{ url_for('register') }}">{{ _('Create an account') }}</a></p>
 </div>
 {% endblock %}

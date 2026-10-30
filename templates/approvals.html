@@ -1,0 +1,7 @@
+{% extends "base.html" %}{% from "_macros.html" import ticket_table %}
+{% block title %}{{ _('Approvals') }}{% endblock %}
+{% block content %}
+<h1>{{ _('Waiting for your approval') }}</h1>
+<p class="muted">{{ _('These requests from your department need your approval before they go to the IT section.') }}</p>
+<div class="card">{{ ticket_table(tickets) }}</div>
+{% endblock %}

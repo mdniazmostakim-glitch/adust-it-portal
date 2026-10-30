@@ -1,26 +1,34 @@
 {% extends "base.html" %}{% from "_macros.html" import ticket_table %}
-{% block title %}Dashboard{% endblock %}
+{% block title %}{{ _('Dashboard') }}{% endblock %}
 {% block content %}
 <div class="row-between">
-  <h1>{{ 'IT Section dashboard' if is_it() else 'Welcome, ' ~ g.user.name.split()[0] }}</h1>
-  <a class="btn primary" href="{{ url_for('new_ticket') }}">+ New request</a>
+  <h1>{{ _('IT Section dashboard') if is_it() else _('Welcome, {name}', name=g.user.name|first_name) }}</h1>
+  <a class="btn primary" href="{{ url_for('new_ticket') }}">+ {{ _('New request') }}</a>
 </div>
+{% if approvals %}
+<a class="flash warn block-link" href="{{ url_for('approvals') }}">✍ {{ _('{n} request(s) waiting for your approval', n=approvals) }} →</a>
+{% endif %}
 <div class="stats">
   {% if is_it() %}
-  <a class="stat highlight" href="{{ url_for('ticket_list', assigned='me') }}"><b>{{ stats.mine }}</b><span>Assigned to me</span></a>
-  <a class="stat" href="{{ url_for('ticket_list', status='new') }}"><b>{{ stats.new }}</b><span>New</span></a>
-  <a class="stat" href="{{ url_for('ticket_list', assigned='none') }}"><b>{{ stats.unassigned }}</b><span>Unassigned</span></a>
-  <a class="stat {{ 'alert' if stats.overdue }}" href="{{ url_for('ticket_list') }}"><b>{{ stats.overdue }}</b><span>Overdue</span></a>
-  <a class="stat" href="{{ url_for('ticket_list', status='resolved') }}"><b>{{ stats.resolved }}</b><span>Resolved / closed</span></a>
+  <a class="stat highlight" href="{{ url_for('ticket_list', assigned='me') }}"><b>{{ stats.mine }}</b><span>{{ _('Assigned to me') }}</span></a>
+  <a class="stat" href="{{ url_for('ticket_list', status='new') }}"><b>{{ stats.new }}</b><span>{{ _('New') }}</span></a>
+  <a class="stat" href="{{ url_for('ticket_list', assigned='none') }}"><b>{{ stats.unassigned }}</b><span>{{ _('Unassigned') }}</span></a>
+  <a class="stat {{ 'alert' if stats.urgent }}" href="{{ url_for('ticket_list', urgent=1) }}"><b>{{ stats.urgent }}</b><span>{{ _('Urgent') }}</span></a>
+  <a class="stat {{ 'alert' if stats.overdue }}" href="{{ url_for('ticket_list', overdue=1) }}"><b>{{ stats.overdue }}</b><span>{{ _('Overdue') }}</span></a>
+  <a class="stat" href="{{ url_for('ticket_list', status='resolved') }}"><b>{{ stats.resolved }}</b><span>{{ _('Resolved / closed') }}</span></a>
   {% else %}
-  <a class="stat highlight" href="{{ url_for('ticket_list') }}"><b>{{ stats.open }}</b><span>Open requests</span></a>
-  <a class="stat" href="{{ url_for('ticket_list', status='new') }}"><b>{{ stats.new }}</b><span>Waiting for IT</span></a>
-  <a class="stat" href="{{ url_for('ticket_list', status='in_progress') }}"><b>{{ stats.in_progress }}</b><span>In progress</span></a>
-  <a class="stat" href="{{ url_for('ticket_list', status='resolved') }}"><b>{{ stats.resolved }}</b><span>Completed</span></a>
+  <a class="stat highlight" href="{{ url_for('ticket_list') }}"><b>{{ stats.open }}</b><span>{{ _('Open requests') }}</span></a>
+  {% if stats.pending %}<a class="stat" href="{{ url_for('ticket_list', status='pending_approval') }}"><b>{{ stats.pending }}</b><span>{{ _('Waiting for approval') }}</span></a>{% endif %}
+  <a class="stat" href="{{ url_for('ticket_list', status='new') }}"><b>{{ stats.new }}</b><span>{{ _('Waiting for IT') }}</span></a>
+  <a class="stat" href="{{ url_for('ticket_list', status='in_progress') }}"><b>{{ stats.in_progress }}</b><span>{{ _('In progress') }}</span></a>
+  <a class="stat {{ 'alert' if stats.to_confirm }}" href="{{ url_for('ticket_list', status='resolved') }}"><b>{{ stats.to_confirm }}</b><span>{{ _('Done — please confirm') }}</span></a>
   {% endif %}
 </div>
 <div class="card">
-  <div class="row-between"><h2>{{ 'Open work queue' if is_it() else 'My open requests' }}</h2><a href="{{ url_for('ticket_list', status='all') }}">View all →</a></div>
+  <div class="row-between"><h2>{{ _('Open work queue') if is_it() else _('My active requests') }}</h2><a href="{{ url_for('ticket_list', status='all') }}">{{ _('View all') }} →</a></div>
   {{ ticket_table(tickets, show_requester=is_it()) }}
 </div>
+{% if not is_it() %}
+<div class="card tip">💡 {{ _('Common problems like Wi-Fi, email or printer setup may already have a solution in the') }} <a href="{{ url_for('help_index') }}">{{ _('Help centre') }}</a>.</div>
+{% endif %}
 {% endblock %}

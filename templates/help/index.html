@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% block title %}{{ _('Help centre') }}{% endblock %}
+{% block content %}
+<div class="row-between">
+  <h1>{{ _('Help centre') }}</h1>
+  {% if is_it() %}<a class="btn primary" href="{{ url_for('help_edit') }}">+ {{ _('New article') }}</a>{% endif %}
+</div>
+<p class="muted">{{ _('Quick solutions for common problems. If this does not help, send a request to the IT section.') }}</p>
+<form class="card filters" method="get">
+  <input type="search" name="q" placeholder="{{ _('Search help articles…') }}" value="{{ request.args.q }}">
+  <select name="category"><option value="">{{ _('All topics') }}</option>
+    {% for c in categories %}<option value="{{ c.id }}" {{ 'selected' if request.args.category == c.id|string }}>{{ c.name }}</option>{% endfor %}
+  </select>
+  <button class="btn">{{ _('Search') }}</button>
+</form>
+<div class="card">
+  {% set ns = namespace(cat=None) %}
+  {% for a in articles %}
+    {% if a.category != ns.cat %}{% set ns.cat = a.category %}<h3 class="kb-cat">{{ a.category or _('General') }}</h3>{% endif %}
+    <a class="note" href="{{ url_for('help_article', article_id=a.id) }}">
+      <span>📄 {{ a.title }}{% if not a.published %} <span class="badge st-cancelled">{{ _('Draft') }}</span>{% endif %}</span>
+      <small class="muted">{{ _('{n} views', n=a.views) }}</small></a>
+  {% else %}
+    <p class="muted">{{ _('No articles found.') }}</p>
+  {% endfor %}
+</div>
+<div class="card tip">{{ _('Still need help?') }} <a class="btn primary small" href="{{ url_for('new_ticket') }}">+ {{ _('New request') }}</a></div>
+{% endblock %}

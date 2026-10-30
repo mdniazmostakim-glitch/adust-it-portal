@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% from "_macros.html" import ticket_table %}{% block title %}{{ a.tag }}{% endblock %}
+{% block content %}
+<div class="row-between"><a href="{{ url_for('assets_index') }}">&larr; {{ _('Devices (assets)') }}</a>
+  <a class="btn small" href="{{ url_for('asset_edit', asset_id=a.id) }}">{{ _('Edit') }}</a></div>
+<div class="cols">
+<div class="card details">
+  <div class="row-between"><h1>🖥 {{ a.tag }}</h1><span class="badge as-{{ a.status }}">{{ _(ASSET_STATUSES[a.status]) }}</span></div>
+  <dl class="grid">
+    <div><dt>{{ _('Type') }}</dt><dd>{{ a.type }}</dd></div>
+    <div><dt>{{ _('Model / name') }}</dt><dd>{{ a.name or '—' }}</dd></div>
+    <div><dt>{{ _('Serial number') }}</dt><dd>{{ a.serial or '—' }}</dd></div>
+    <div><dt>{{ _('Department / Office') }}</dt><dd>{{ a.department or '—' }}</dd></div>
+    <div><dt>{{ _('Location') }}</dt><dd>{{ a.location or '—' }}</dd></div>
+    <div><dt>{{ _('Used by') }}</dt><dd>{{ a.user_name or '—' }}</dd></div>
+    <div><dt>{{ _('Purchase date') }}</dt><dd>{{ a.purchase_date|d }}</dd></div>
+    <div><dt>{{ _('Warranty until') }}</dt><dd><span class="{{ 'due overdue' if a.warranty_until and a.warranty_until < today() }}">{{ a.warranty_until|d }}</span></dd></div>
+  </dl>
+  {% if a.notes %}<div class="desc">{{ a.notes }}</div>{% endif %}
+</div>
+<div class="card">
+  <h2>{{ _('Repair / request history') }}</h2>
+  <div class="stats compact">
+    <div class="stat"><b>{{ tickets|length }}</b><span>{{ _('Total requests') }}</span></div>
+    <div class="stat"><b>{{ tickets|selectattr('status', 'in', OPEN_STATUSES)|list|length }}</b><span>{{ _('Open') }}</span></div>
+  </div>
+  {% if tickets|length >= 3 %}<div class="flash warn">{{ _('This device has had {n} requests. Consider replacing it.', n=tickets|length) }}</div>{% endif %}
+</div>
+</div>
+<div class="card">{{ ticket_table(tickets) }}</div>
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "base.html" %}{% block title %}{{ _('Recurring maintenance') }}{% endblock %}
+{% block content %}
+<h1>{{ _('Recurring maintenance') }}</h1>
+<p class="muted">{{ _('Regular jobs (e.g. monthly server check, weekly backup check) become requests automatically on schedule.') }}</p>
+<div class="card">
+  <h2>{{ _('Edit schedule') if edit else _('New schedule') }}</h2>
+  <form method="post" class="grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if edit %}<input type="hidden" name="id" value="{{ edit.id }}">{% endif %}
+    <label class="span">{{ _('Title') }} * <input name="title" required value="{{ edit.title if edit }}" placeholder="{{ _('e.g. Monthly server health check') }}"></label>
+    <label>{{ _('Category') }} * <select name="category_id" required><option value="">—</option>
+      {% for c in categories %}<option value="{{ c.id }}" {{ 'selected' if edit and edit.category_id == c.id }}>{{ c.name }}</option>{% endfor %}</select></label>
+    <label>{{ _('Repeat') }} * <select name="frequency">{% for k, v in FREQUENCIES.items() %}<option value="{{ k }}" {{ 'selected' if (edit and edit.frequency == k) or (not edit and k == 'monthly') }}>{{ _(v) }}</option>{% endfor %}</select></label>
+    <label>{{ _('Next date') }} * <input type="date" name="next_run" required value="{{ edit.next_run if edit else today() }}"></label>
+    <label>{{ _('Days allowed to finish') }} <input type="number" name="lead_days" min="0" max="60" value="{{ edit.lead_days if edit else 2 }}"></label>
+    <label>{{ _('Assign to') }} <select name="assigned_to"><option value="">{{ _('IT Section (any)') }}</option>
+      {% for s in staff %}<option value="{{ s.id }}" {{ 'selected' if edit and edit.assigned_to == s.id }}>{{ s.name }}</option>{% endfor %}</select></label>
+    <label>{{ _('Priority') }} <select name="priority">{% for p in range(1, 11) %}<option {{ 'selected' if (edit and edit.priority == p) or (not edit and p == 5) }}>{{ p }}</option>{% endfor %}</select></label>
+    <label>{{ _('Device asset tag') }} <input name="asset_tag" value="{{ edit.asset_tag or '' if edit }}"></label>
+    <label>{{ _('Location') }} <input name="location" value="{{ edit.location if edit }}"></label>
+    <label class="span">{{ _('Checklist / instructions') }} <textarea name="description" rows="3">{{ edit.description if edit }}</textarea></label>
+    <div class="span"><button class="btn primary">{{ _('Save schedule') }}</button>{% if edit %} <a class="btn" href="{{ url_for('admin_recurring') }}">{{ _('Cancel') }}</a>{% endif %}</div>
+  </form>
+</div>
+<div class="card">
+  <table>
+    <thead><tr><th>{{ _('Task') }}</th><th>{{ _('Repeat') }}</th><th>{{ _('Next date') }}</th><th>{{ _('Assigned to') }}</th><th>{{ _('Last created') }}</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr class="{{ '' if r.active else 'inactive' }}">
+      <td data-label="{{ _('Task') }}"><strong>{{ r.title }}</strong><br><small class="muted">{{ r.category }}{% if r.asset_tag %} · 🖥 {{ r.asset_tag }}{% endif %}</small></td>
+      <td data-label="{{ _('Repeat') }}">{{ _(FREQUENCIES[r.frequency]) }}</td>
+      <td data-label="{{ _('Next date') }}">{{ r.next_run|d }}</td>
+      <td data-label="{{ _('Assigned to') }}">{{ r.assignee or _('IT Section') }}</td>
+      <td data-label="{{ _('Last created') }}">{{ r.last_run|dt }}</td>
+      <td class="actions">
+        <a class="btn small" href="{{ url_for('admin_recurring', edit=r.id) }}">{{ _('Edit') }}</a>
+        <form method="post" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn small" name="run_now" value="{{ r.id }}">{{ _('Create now') }}</button>
+          <button class="btn small" name="toggle" value="{{ r.id }}">{{ _('Pause') if r.active else _('Resume') }}</button>
+          <button class="btn small danger" name="delete" value="{{ r.id }}" onclick="return confirm('{{ _('Delete this schedule?') }}')">{{ _('Delete') }}</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="muted">{{ _('No schedules yet.') }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

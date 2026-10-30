@@ -1,22 +1,21 @@
-{% extends "base.html" %}{% from "_macros.html" import status %}
-{% block title %}Reports{% endblock %}
+{% extends "base.html" %}{% block title %}{{ _('Reports') }}{% endblock %}
 {% block content %}
-<h1>Reports</h1>
-<div class="stats">
-  {% for r in by_status %}<a class="stat" href="{{ url_for('ticket_list', status=r.status) }}"><b>{{ r.n }}</b><span>{{ STATUSES[r.status] }}</span></a>{% endfor %}
+<div class="row-between">
+  <h1>{{ _('Reports') }}</h1>
+  <div class="actions">
+    <a class="btn" href="{{ url_for('admin_reports', export='xlsx', **{'from': start, 'to': end, 'range': 'custom'}) }}">⬇ {{ _('Excel') }}</a>
+    <a class="btn" target="_blank" href="{{ url_for('admin_reports', print=1, **{'from': start, 'to': end, 'range': 'custom'}) }}">🖨 {{ _('Print / PDF') }}</a>
+  </div>
 </div>
-<div class="cols">
-<div class="card"><h2>IT staff workload</h2>
-  <table><thead><tr><th>Staff</th><th>Open</th><th>Done</th><th>Avg. time to resolve</th></tr></thead><tbody>
-  {% for s in by_staff %}<tr><td data-label="Staff">{{ s.name }}</td><td data-label="Open">{{ s.open or 0 }}</td><td data-label="Done">{{ s.done or 0 }}</td>
-    <td data-label="Avg. time">{% if s.avg_hours is not none %}{{ s.avg_hours }} h{% else %}—{% endif %}</td></tr>{% endfor %}
-  </tbody></table></div>
-<div class="card"><h2>By category</h2>
-  <table><thead><tr><th>Category</th><th>Total</th><th>Open</th><th>Done</th></tr></thead><tbody>
-  {% for c in by_category %}<tr><td data-label="Category">{{ c.name }}</td><td data-label="Total">{{ c.total }}</td><td data-label="Open">{{ c.open }}</td><td data-label="Done">{{ c.done }}</td></tr>
-  {% else %}<tr><td colspan="4" class="muted">No data yet.</td></tr>{% endfor %}
-  </tbody></table></div>
-<div class="card"><h2>Top requesting departments</h2>
-  <table><tbody>{% for d in by_dept %}<tr><td>{{ d.dept }}</td><td>{{ d.n }}</td></tr>{% else %}<tr><td class="muted">No data yet.</td></tr>{% endfor %}</tbody></table></div>
-</div>
+<form class="card filters" method="get">
+  {% for k, label in [('30d', 'Last 30 days'), ('month', 'This month'), ('lastmonth', 'Last month'), ('year', 'This year'), ('all', 'All time')] %}
+  <a class="chip {{ 'on' if preset == k }}" href="{{ url_for('admin_reports', range=k) }}">{{ _(label) }}</a>
+  {% endfor %}
+  <input type="hidden" name="range" value="custom">
+  <label class="check">{{ _('From') }} <input type="date" name="from" value="{{ start }}"></label>
+  <label class="check">{{ _('To') }} <input type="date" name="to" value="{{ end }}"></label>
+  <button class="btn">{{ _('Show') }}</button>
+</form>
+<p class="muted">{{ _('Period') }}: {{ start|d }} – {{ end|d }}</p>
+{% include "admin/_report_body.html" %}
 {% endblock %}

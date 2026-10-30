@@ -1,0 +1,11 @@
+[Unit]
+Description=ADUST IT Portal reminders, escalation, recurring tasks and daily backup
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/adust-it-portal
+EnvironmentFile=/etc/adust-it-portal.env
+Environment=TZ=Asia/Dhaka
+ExecStart=/opt/adust-it-portal/venv/bin/flask --app app housekeeping

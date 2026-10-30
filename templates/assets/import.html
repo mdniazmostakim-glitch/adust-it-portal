@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% block title %}{{ _('Import devices') }}{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>{{ _('Import devices from CSV') }}</h1>
+  <ol>
+    <li>{{ _('Download the template and fill it in Excel (one device per row).') }} <a href="{{ url_for('assets_template') }}">⬇ assets-template.csv</a></li>
+    <li>{{ _('Save it as "CSV UTF-8" and upload it here.') }}</li>
+    <li>{{ _('Devices with an existing asset tag are updated; new tags are added.') }}</li>
+  </ol>
+  <p class="hint">{{ _('Allowed types') }}: {{ ASSET_TYPES|join(', ') }} · {{ _('Status') }}: in_use, spare, in_repair, retired · {{ _('Dates') }}: YYYY-MM-DD</p>
+  <form method="post" enctype="multipart/form-data" class="filters">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="file" name="file" accept=".csv" required>
+    <button class="btn primary">{{ _('Import') }}</button>
+  </form>
+</div>
+{% endblock %}

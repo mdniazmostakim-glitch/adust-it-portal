@@ -1,0 +1,40 @@
+{% extends "base.html" %}{% block title %}{{ _('Devices (assets)') }}{% endblock %}
+{% block content %}
+<div class="row-between">
+  <h1>{{ _('Devices (assets)') }}</h1>
+  <div class="actions">
+    <a class="btn" href="{{ url_for('assets_index', export=1, **request.args) }}">⬇ {{ _('Download Excel') }}</a>
+    <a class="btn" href="{{ url_for('assets_import') }}">⬆ {{ _('Import CSV') }}</a>
+    <a class="btn primary" href="{{ url_for('asset_edit') }}">+ {{ _('Add device') }}</a>
+  </div>
+</div>
+<form class="card filters" method="get">
+  <input type="search" name="q" placeholder="{{ _('Search tag, model, serial, location, user…') }}" value="{{ request.args.q }}">
+  <select name="type"><option value="">{{ _('All types') }}</option>{% for t in ASSET_TYPES %}<option {{ 'selected' if request.args.type == t }}>{{ t }}</option>{% endfor %}</select>
+  <select name="status"><option value="">{{ _('Any status') }}</option>{% for k, v in ASSET_STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if request.args.status == k }}>{{ _(v) }}</option>{% endfor %}</select>
+  <select name="department"><option value="">{{ _('All departments') }}</option>{% for d in departments() %}<option {{ 'selected' if request.args.department == d }}>{{ d }}</option>{% endfor %}</select>
+  <button class="btn">{{ _('Filter') }}</button>
+</form>
+<div class="card">
+  <p class="muted">{{ _('{n} device(s)', n=assets|length) }}</p>
+  {% if assets %}
+  <table class="tickets">
+    <thead><tr><th>{{ _('Asset tag') }}</th><th>{{ _('Type') }}</th><th>{{ _('Model / name') }}</th><th>{{ _('Department') }}</th><th>{{ _('Location') }}</th><th>{{ _('Warranty until') }}</th><th>{{ _('Status') }}</th><th>{{ _('Requests') }}</th></tr></thead>
+    <tbody>
+    {% for a in assets %}
+    <tr onclick="location.href='{{ url_for('asset_detail', asset_id=a.id) }}'">
+      <td class="nowrap" data-label="{{ _('Asset tag') }}"><a href="{{ url_for('asset_detail', asset_id=a.id) }}"><strong>{{ a.tag }}</strong></a></td>
+      <td data-label="{{ _('Type') }}">{{ a.type }}</td>
+      <td data-label="{{ _('Model / name') }}">{{ a.name }}</td>
+      <td data-label="{{ _('Department') }}">{{ a.department }}</td>
+      <td data-label="{{ _('Location') }}">{{ a.location }}</td>
+      <td data-label="{{ _('Warranty until') }}"><span class="{{ 'due overdue' if a.warranty_until and a.warranty_until < today() }}">{{ a.warranty_until|d }}</span></td>
+      <td data-label="{{ _('Status') }}"><span class="badge as-{{ a.status }}">{{ _(ASSET_STATUSES[a.status]) }}</span></td>
+      <td data-label="{{ _('Requests') }}">{{ a.requests }}{% if a.open_requests %} <span class="badge st-new">{{ _('{n} open', n=a.open_requests) }}</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">{{ _('No devices yet. Add them one by one or import a CSV file.') }}</p>{% endif %}
+</div>
+{% endblock %}

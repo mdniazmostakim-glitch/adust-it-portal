@@ -1,30 +1,36 @@
 {% extends "base.html" %}{% from "_macros.html" import ticket_table %}
-{% block title %}Requests{% endblock %}
+{% block title %}{{ _('Requests') }}{% endblock %}
 {% block content %}
-<h1>{{ 'All requests' if is_it() else 'My requests' }}</h1>
+<div class="row-between">
+  <h1>{{ _('All requests') if is_it() else _('My requests') }}</h1>
+  <a class="btn" href="{{ url_for('ticket_export', **request.args) }}">⬇ {{ _('Download Excel') }}</a>
+</div>
 <form class="card filters" method="get">
-  <input type="search" name="q" placeholder="Search code, title, person, department…" value="{{ request.args.q }}">
+  <input type="search" name="q" placeholder="{{ _('Search code, title, person, department, asset…') }}" value="{{ request.args.q }}">
   <select name="status">
-    <option value="open" {{ 'selected' if status == 'open' }}>Open (all active)</option>
-    <option value="all" {{ 'selected' if status == 'all' }}>All statuses</option>
-    {% for k, v in STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if status == k }}>{{ v }}</option>{% endfor %}
+    <option value="open" {{ 'selected' if status == 'open' }}>{{ _('Open (all active)') }}</option>
+    <option value="all" {{ 'selected' if status == 'all' }}>{{ _('All statuses') }}</option>
+    {% for k, v in STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if status == k }}>{{ _(v) }}</option>{% endfor %}
   </select>
-  <select name="category"><option value="">All categories</option>
+  <select name="category"><option value="">{{ _('All categories') }}</option>
     {% for c in categories %}<option value="{{ c.id }}" {{ 'selected' if request.args.category == c.id|string }}>{{ c.name }}</option>{% endfor %}
   </select>
-  <select name="priority"><option value="">Any priority</option><option value="high" {{ 'selected' if request.args.priority == 'high' }}>High (8–10) or urgent</option></select>
+  <select name="priority"><option value="">{{ _('Any priority') }}</option><option value="high" {{ 'selected' if request.args.priority == 'high' }}>{{ _('High (8–10) or urgent') }}</option></select>
   {% if is_it() %}
-  <select name="assigned"><option value="">Anyone</option>
-    <option value="me" {{ 'selected' if request.args.assigned == 'me' }}>Assigned to me</option>
-    <option value="none" {{ 'selected' if request.args.assigned == 'none' }}>Unassigned</option>
+  <select name="assigned"><option value="">{{ _('Anyone') }}</option>
+    <option value="me" {{ 'selected' if request.args.assigned == 'me' }}>{{ _('Assigned to me') }}</option>
+    <option value="none" {{ 'selected' if request.args.assigned == 'none' }}>{{ _('Unassigned') }}</option>
     {% for s in it_staff %}<option value="{{ s.id }}" {{ 'selected' if request.args.assigned == s.id|string }}>{{ s.name }}</option>{% endfor %}
   </select>
   {% endif %}
-  <label class="check"><input type="checkbox" name="urgent" value="1" {{ 'checked' if request.args.urgent }}> Urgent only</label>
-  <button class="btn">Filter</button>
+  <label class="check">{{ _('From') }} <input type="date" name="from" value="{{ request.args.get('from', '') }}"></label>
+  <label class="check">{{ _('To') }} <input type="date" name="to" value="{{ request.args.to }}"></label>
+  <label class="check"><input type="checkbox" name="urgent" value="1" {{ 'checked' if request.args.urgent }}> {{ _('Urgent only') }}</label>
+  <label class="check"><input type="checkbox" name="overdue" value="1" {{ 'checked' if request.args.overdue }}> {{ _('Overdue only') }}</label>
+  <button class="btn">{{ _('Filter') }}</button>
 </form>
 <div class="card">
-  <p class="muted">{{ tickets|length }} request{{ '' if tickets|length == 1 else 's' }}</p>
+  <p class="muted">{{ _('{n} request(s)', n=tickets|length) }}</p>
   {{ ticket_table(tickets, show_requester=is_it()) }}
 </div>
 {% endblock %}

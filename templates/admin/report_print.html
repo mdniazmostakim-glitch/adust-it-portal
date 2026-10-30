@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="{{ g.lang }}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ _('IT Section report') }} {{ start }} – {{ end }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='print.css') }}"></head>
+<body class="report-print">
+<div class="toolbar"><button onclick="window.print()">🖨 {{ _('Print / Save as PDF') }}</button></div>
+<div class="sheet wide">
+  <header class="doc-head">
+    <img src="{{ url_for('static', filename='img/adust-logo.png') }}" alt="">
+    <div><strong>Atish Dipankar University of Science &amp; Technology</strong><br>{{ _('IT Section report') }}</div>
+    <div class="doc-code">{{ start|d }} – {{ end|d }}<br><small>{{ _('Generated') }} {{ today()|d }}</small></div>
+  </header>
+  {% include "admin/_report_body.html" %}
+</div>
+</body></html>

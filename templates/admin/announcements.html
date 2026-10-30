@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% block title %}{{ _('Announcements') }}{% endblock %}
+{% block content %}
+<h1>{{ _('Announcements') }}</h1>
+<div class="card">
+  <p class="muted">{{ _('Shown as a banner at the top of every page, e.g. "Campus internet is down; we are working on it." This prevents many duplicate requests.') }}</p>
+  <form method="post" class="grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="span">{{ _('Message') }} * <input name="message" required maxlength="300"></label>
+    <label>{{ _('Type') }} <select name="level">{% for k, v in LEVELS.items() %}<option value="{{ k }}">{{ _(v) }}</option>{% endfor %}</select></label>
+    <label>{{ _('Show until (optional)') }} <input type="datetime-local" name="ends_at"></label>
+    <div class="span"><button class="btn primary">{{ _('Publish') }}</button></div>
+  </form>
+</div>
+<div class="card">
+  <table>
+    <thead><tr><th>{{ _('Message') }}</th><th>{{ _('Type') }}</th><th>{{ _('Until') }}</th><th>{{ _('By') }}</th><th>{{ _('Status') }}</th><th></th></tr></thead>
+    <tbody>
+    {% for a in rows %}
+    {% set live = a.active and (not a.ends_at or a.ends_at > now_ts) %}
+    <tr class="{{ '' if live else 'inactive' }}">
+      <td data-label="{{ _('Message') }}">{{ a.message }}</td>
+      <td data-label="{{ _('Type') }}"><span class="badge lv-{{ a.level }}">{{ _(LEVELS[a.level]) }}</span></td>
+      <td data-label="{{ _('Until') }}">{{ a.ends_at|dt if a.ends_at else '—' }}</td>
+      <td data-label="{{ _('By') }}">{{ a.author }}<br><small class="muted">{{ a.created_at|dt }}</small></td>
+      <td data-label="{{ _('Status') }}">{{ _('Showing') if live else _('Hidden') }}</td>
+      <td><form method="post" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn small" name="toggle" value="{{ a.id }}">{{ _('Hide') if a.active else _('Show') }}</button></form></td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="muted">{{ _('No announcements yet.') }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

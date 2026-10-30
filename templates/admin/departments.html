@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% block title %}{{ _('Departments') }}{% endblock %}
+{% block content %}
+<h1>{{ _('Departments & offices') }}</h1>
+<div class="card">
+  <form method="post" class="filters">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input name="name" required placeholder="{{ _('New department or office name') }}">
+    <button class="btn primary">{{ _('Add') }}</button>
+  </form>
+  <p class="hint">{{ _('To set a department head, edit the user and tick "Department head".') }}</p>
+</div>
+<div class="card">
+  <table>
+    <thead><tr><th>{{ _('Department / Office') }}</th><th>{{ _('People') }}</th><th>{{ _('Department head (approver)') }}</th><th>{{ _('Status') }}</th><th></th></tr></thead>
+    <tbody>
+    {% for d in rows %}
+    <tr class="{{ '' if d.active else 'inactive' }}">
+      <td data-label="{{ _('Department') }}">{{ d.name }}</td><td data-label="{{ _('People') }}">{{ d.people }}</td>
+      <td data-label="{{ _('Head') }}">{{ d.heads or '—' }}</td>
+      <td data-label="{{ _('Status') }}">{{ _('Active') if d.active else _('Hidden') }}</td>
+      <td><form method="post" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn small" name="toggle" value="{{ d.id }}">{{ _('Hide') if d.active else _('Show') }}</button></form></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

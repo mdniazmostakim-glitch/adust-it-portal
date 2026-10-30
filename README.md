@@ -1,24 +1,32 @@
 # ADUST IT Section — Service Request Portal
 
-University staff send work to the **IT section** (e.g. hardware, network, software,
-email). IT staff work on each request and post updates, and both sides are notified.
-The portal only opens from the **university network**.
+University staff send work to the **IT section**; IT staff work on each request and post
+updates, and everyone is notified. The portal opens only from the **university network**,
+works in **English and Bangla**, and runs on a single small server (Python + SQLite).
 
-![IT dashboard](docs/screenshots/06-it-dashboard.png)
+![IT dashboard](docs/screenshots/08-it-dashboard.png)
 
 ## Features
 
-| | |
+| Area | What it does |
 |---|---|
-| **University network only** | Only allowed IPs/ranges can open the site; everyone else sees an "Access restricted" page. Managed in *Admin → Network* or via `PORTAL_ALLOWED_NETWORKS`. The server itself (localhost) always has access, and the admin cannot lock themselves out. |
-| **Login** | Sign in with **university email or user ID** + password, or with the **@adust.edu.bd webmail password** (IMAP); first webmail login creates the account automatically. Self-registration only with a university email. |
-| **Assign work to IT** | Title, **category**, **priority 1–10**, **urgent** flag, **needed-by date**, **which IT staff** it goes to (or the whole IT section), location, description, **remarks**, attachment. Each request gets a code like `IT-2026-0001`. |
-| **IT workflow** | Work queue sorted by urgency → priority → deadline. Change status (New, In progress, On hold, Resolved, Closed, Rejected), reassign, change priority, reply to requester, attach files, and add **internal notes** the requester cannot see. |
-| **Requester actions** | Track progress, add comments/files, cancel a new request, **confirm** a resolved one or **reopen** it. |
-| **Notifications** | Bell with unread count (updates every 30 s) + desktop pop-up + **email**. IT is notified on new requests (assignee + IT admins, or the whole IT team if unassigned); the requester is notified on every IT update. |
-| **Admin** | Users & roles (Requester / IT staff / IT admin), categories, allowed networks, reports (workload per IT staff, average resolve time, by category, by department). |
+| **University network only** | Only allowed IPs/ranges can open the site; others see "Access restricted". Managed in *Admin → Network access*. Admin cannot lock themselves out. |
+| **Sign-in** | University email **or** user ID + password, or the **@adust.edu.bd webmail password** (IMAP; first login creates the account). **Forgot password** by email link (1 hour, single use). **Lock-out** after 5 wrong passwords (15 min). |
+| **Assign work to IT** | Category, priority 1–10, urgent flag, needed-by date, which IT staff, location, **device (asset tag)**, description, remarks, attachment. Code like `IT-2026-0001`. Matching **help articles are suggested** while filling the form. |
+| **Department-head approval** | Categories marked "needs approval" (e.g. *New equipment / Purchase*) go first to the requester's department head, who approves or rejects with a reason. |
+| **IT workflow** | Queue sorted by urgency → priority → deadline. Status, reassign, priority, device, replies, attachments, **internal IT notes**. **Printable job card** with signature lines. |
+| **Requester** | Track progress, comment, cancel, **confirm + rate (1–5 ★)** when done, or reopen. |
+| **Notifications** | Bell + desktop pop-up + **email**; **SMS** to IT for urgent work and escalations. |
+| **Reminders & escalation** | New request untouched for 4 h (1 h if urgent) → IT admins alerted. Overdue → daily alert. Pending approvals → reminder to the head. Resolved but not confirmed for 7 days → closed automatically. All times adjustable in *Settings*. |
+| **Devices (asset inventory)** | Every PC/printer/projector/switch with tag, serial, location, warranty; full repair history; "consider replacing" hint; CSV import & Excel export. |
+| **Recurring maintenance** | Daily / weekly / monthly / quarterly / yearly jobs become requests automatically. |
+| **Help centre** | IT writes short how-to articles (headings, steps, links); searchable. |
+| **Announcements** | Banner on every page, e.g. "Campus internet is down; we are working on it". |
+| **Reports** | Any period: totals, avg. first response, avg. time to resolve, avg. rating, per IT staff, per category, per department, devices with most requests, last 12 months. **Excel** download and **Print / PDF**. Request lists also export to Excel. |
+| **Backups** | Daily automatic zip of database + uploaded files (kept 14 days), plus "Create backup now" and download in *Admin → Backups*. |
+| **Bangla / English** | Switch with one click in the header; remembered per user. |
 
-Lightweight: Python + Flask + SQLite, no JavaScript framework, a single CSS file.
+Roles: **Requester** (staff/faculty), **IT staff**, **IT admin** (IT staff + manages the portal). Any user can also be marked **Department head** (approver).
 
 ## Quick start (try it)
 
@@ -32,25 +40,51 @@ flask --app app run --host 0.0.0.0
 
 ```bash
 sudo apt install python3-venv nginx
-sudo mkdir -p /opt/adust-it-portal /var/lib/adust-it-portal/uploads
+sudo mkdir -p /opt/adust-it-portal /var/lib/adust-it-portal/uploads /var/lib/adust-it-portal/backups
 sudo cp -r . /opt/adust-it-portal && cd /opt/adust-it-portal
 sudo python3 -m venv venv && sudo venv/bin/pip install -r requirements.txt
 sudo cp deploy/portal.env.example /etc/adust-it-portal.env   # then edit it
 sudo chown -R www-data:www-data /var/lib/adust-it-portal
 sudo -u www-data bash -c 'set -a; . /etc/adust-it-portal.env; venv/bin/flask --app app create-admin'
-sudo cp deploy/adust-it-portal.service /etc/systemd/system/ && sudo systemctl enable --now adust-it-portal
+sudo cp deploy/adust-it-portal.service deploy/adust-it-portal-housekeeping.* /etc/systemd/system/
+sudo systemctl enable --now adust-it-portal adust-it-portal-housekeeping.timer
 sudo cp deploy/nginx.conf /etc/nginx/sites-available/adust-it-portal
 sudo ln -s /etc/nginx/sites-available/adust-it-portal /etc/nginx/sites-enabled/ && sudo systemctl reload nginx
 ```
 
-Then open the portal from a campus PC, sign in as admin and check **Admin → Network**: it shows
-the IP the server sees for you. Add the campus ranges there.
+Then, from a campus PC:
 
-**Backup:** copy `/var/lib/adust-it-portal/` (database + uploaded files).
+1. Sign in as admin → **Admin → Network access**: check the IP the server sees and add the campus ranges.
+2. **Admin → Settings**: check the system status, send a test email / SMS.
+3. **Admin → Users**: add IT staff; tick *Department head* for heads of departments.
+4. **Admin → Categories**: choose which categories need approval.
+5. **IT → Devices**: import your device list (CSV template provided).
+
+Reminders and backups also run on their own when people use the portal; the systemd timer
+makes sure they run at night too.
+
+### Backup & restore
+
+Backups are in `/var/lib/adust-it-portal/backups` (and downloadable in *Admin → Backups*).
+To restore: stop the service, unzip a backup, copy `portal.db` and `uploads/` into
+`/var/lib/adust-it-portal/`, then start the service.
 
 ### Useful commands
 
 ```bash
-flask --app app create-admin                              # another IT admin
+flask --app app create-admin                                   # another IT admin
 flask --app app allow-network 192.168.10.0/24 --label "Admin building"
+flask --app app housekeeping                                   # run reminders/backup now
+flask --app app backup                                         # backup now
+```
+
+## Project layout
+
+```
+app.py              routes, database, notifications, housekeeping, CLI
+i18n.py             Bangla translations of all interface text
+schema.sql          database tables
+templates/          pages (help/, assets/, admin/ sub-folders)
+static/             style.css, print.css, ADUST logo
+deploy/             systemd units, nginx config, environment template
 ```

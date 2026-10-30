@@ -1,0 +1,40 @@
+{% extends "base.html" %}{% block title %}{{ _('Settings') }}{% endblock %}
+{% block content %}
+<h1>{{ _('Settings') }}</h1>
+<div class="cols">
+<div class="card">
+  <h2>{{ _('Reminders & automation') }}</h2>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>{{ _('Escalate a new request to IT admins if nobody responds within (hours)') }}
+      <input type="number" name="escalate_hours" min="1" value="{{ values.escalate_hours }}"></label>
+    <label>{{ _('… for URGENT requests (hours)') }}
+      <input type="number" name="escalate_hours_urgent" min="1" value="{{ values.escalate_hours_urgent }}"></label>
+    <label>{{ _('Remind department heads about pending approvals after (hours)') }}
+      <input type="number" name="approval_remind_hours" min="1" value="{{ values.approval_remind_hours }}"></label>
+    <label>{{ _('Close resolved requests automatically if the requester does not respond within (days)') }}
+      <input type="number" name="auto_close_days" min="1" value="{{ values.auto_close_days }}"></label>
+    <label>{{ _('Keep backups for (days)') }}
+      <input type="number" name="backup_keep_days" min="1" value="{{ values.backup_keep_days }}"></label>
+    <label class="check"><input type="checkbox" name="sms_urgent" value="1" {{ 'checked' if values.sms_urgent == '1' }}> {{ _('Send SMS to IT staff for urgent requests and escalations') }}</label>
+    <button class="btn primary">{{ _('Save settings') }}</button>
+  </form>
+</div>
+<div class="card">
+  <h2>{{ _('System status') }}</h2>
+  <table class="status-list">
+    {% for key, label in [('email', 'Email notifications (SMTP)'), ('sms', 'SMS gateway'), ('webmail', 'Webmail sign-in (IMAP)'), ('networks', 'University network restriction'), ('secret', 'Fixed secret key'), ('https', 'HTTPS cookies')] %}
+    <tr><td>{{ _(label) }}</td><td>{% if status[key] %}<span class="badge st-resolved">✓ {{ _('On') }}</span>{% else %}<span class="badge st-cancelled">{{ _('Not set') }}</span>{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="hint">{{ _('Email, SMS and webmail are configured on the server in /etc/adust-it-portal.env (see README).') }}</p>
+  <form method="post" class="actions">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn small" name="action" value="test_email">✉ {{ _('Send test email to me') }}</button>
+    <button class="btn small" name="action" value="test_sms">📱 {{ _('Send test SMS to me') }}</button>
+    <button class="btn small" name="action" value="housekeeping">⟳ {{ _('Run reminders & checks now') }}</button>
+  </form>
+  <p class="hint">{{ _('Last automatic check:') }} {{ values.hk_last|dt }} · {{ _('Last backup:') }} {{ values.last_backup|dt }}</p>
+</div>
+</div>
+{% endblock %}

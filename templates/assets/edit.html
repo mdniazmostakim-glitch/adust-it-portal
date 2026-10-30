@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block title %}{{ _('Device') }}{% endblock %}
+{% block content %}
+{% set v = request.form if request.method == 'POST' else (a or {}) %}
+<div class="card">
+  <h1>{{ _('Edit device') if a else _('Add device') }}</h1>
+  <form method="post" class="grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>{{ _('Asset tag') }} * <input name="tag" required placeholder="ADUST-PC-0001" value="{{ v.tag or '' }}"></label>
+    <label>{{ _('Type') }} * <select name="type" required><option value="">—</option>{% for t in ASSET_TYPES %}<option {{ 'selected' if v.type == t }}>{{ t }}</option>{% endfor %}</select></label>
+    <label>{{ _('Model / name') }} <input name="name" placeholder="HP ProDesk 400 G7" value="{{ v.name or '' }}"></label>
+    <label>{{ _('Serial number') }} <input name="serial" value="{{ v.serial or '' }}"></label>
+    <label>{{ _('Department / Office') }} <select name="department"><option value="">—</option>{% for d in departments() %}<option {{ 'selected' if v.department == d }}>{{ d }}</option>{% endfor %}</select></label>
+    <label>{{ _('Location') }} <input name="location" placeholder="{{ _('e.g. Main campus, Room 402') }}" value="{{ v.location or '' }}"></label>
+    <label>{{ _('Used by') }} <input name="user_name" value="{{ v.user_name or '' }}"></label>
+    <label>{{ _('Status') }} <select name="status">{% for k, s in ASSET_STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if v.status == k }}>{{ _(s) }}</option>{% endfor %}</select></label>
+    <label>{{ _('Purchase date') }} <input type="date" name="purchase_date" value="{{ v.purchase_date or '' }}"></label>
+    <label>{{ _('Warranty until') }} <input type="date" name="warranty_until" value="{{ v.warranty_until or '' }}"></label>
+    <label class="span">{{ _('Notes') }} <textarea name="notes" rows="3">{{ v.notes or '' }}</textarea></label>
+    <div class="span"><button class="btn primary">{{ _('Save device') }}</button> <a class="btn" href="{{ url_for('asset_detail', asset_id=a.id) if a else url_for('assets_index') }}">{{ _('Cancel') }}</a></div>
+  </form>
+</div>
+{% endblock %}

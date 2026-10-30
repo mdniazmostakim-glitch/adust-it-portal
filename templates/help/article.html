@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% block title %}{{ a.title }}{% endblock %}
+{% block content %}
+<div class="row-between"><a href="{{ url_for('help_index') }}">&larr; {{ _('Help centre') }}</a>
+  {% if is_it() %}<a class="btn small" href="{{ url_for('help_edit', article_id=a.id) }}">{{ _('Edit') }}</a>{% endif %}</div>
+<article class="card article">
+  <p class="muted">{{ a.category or _('General') }} · {{ _('Updated') }} {{ a.updated_at|d }}</p>
+  <h1>{{ a.title }}</h1>
+  {{ a.body|article }}
+</article>
+<div class="card tip">{{ _('Did not solve your problem?') }} <a class="btn primary small" href="{{ url_for('new_ticket') }}">+ {{ _('Send a request to IT') }}</a></div>
+{% endblock %}

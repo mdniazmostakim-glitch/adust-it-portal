@@ -1,24 +1,20 @@
-{% extends "base.html" %}{% block title %}Register{% endblock %}
+{% extends "base.html" %}{% from "_macros.html" import dept_select %}{% block title %}{{ _('Register') }}{% endblock %}
 {% block content %}
 <div class="auth card wide">
-  <div class="auth-head">
-    <img class="auth-logo" src="{{ url_for('static', filename='img/adust-logo.png') }}" alt="ADUST logo">
-    <div class="auth-uni">Atish Dipankar University<br>of Science &amp; Technology</div>
-    <div class="auth-kicker"><span>IT Section · Service Request Portal</span></div>
-  </div>
-  <h1 class="center">Create an account</h1>
+  {% include "_auth_head.html" %}
+  <h1 class="center">{{ _('Create an account') }}</h1>
   <form method="post" class="grid">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label>Full name * <input name="name" required value="{{ request.form.name }}"></label>
-    <label>University email * <input type="email" name="email" required placeholder="name@{{ domain }}" value="{{ request.form.email }}"></label>
-    <label>User ID / Employee ID <input name="login_id" value="{{ request.form.login_id }}"></label>
-    <label>Mobile <input name="phone" value="{{ request.form.phone }}"></label>
-    <label>Department / Office * <input name="department" required placeholder="e.g. CSE, Accounts, Registrar" value="{{ request.form.department }}"></label>
-    <label>Designation <input name="designation" value="{{ request.form.designation }}"></label>
-    <label>Password * <input type="password" name="password" minlength="8" required></label>
-    <label>Confirm password * <input type="password" name="confirm" minlength="8" required></label>
-    <div class="span"><button class="btn primary full">Register</button></div>
+    <label>{{ _('Full name') }} * <input name="name" required value="{{ request.form.name }}"></label>
+    <label>{{ _('University email') }} * <input type="email" name="email" required placeholder="name@{{ domain }}" value="{{ request.form.email }}"></label>
+    <label>{{ _('User ID / Employee ID') }} <input name="login_id" value="{{ request.form.login_id }}"></label>
+    <label>{{ _('Mobile') }} <input name="phone" placeholder="01XXXXXXXXX" value="{{ request.form.phone }}"></label>
+    <label>{{ _('Department / Office') }} * {{ dept_select('department', request.form.department) }}</label>
+    <label>{{ _('Designation') }} <input name="designation" value="{{ request.form.designation }}"></label>
+    <label>{{ _('Password') }} * <input type="password" name="password" minlength="8" required></label>
+    <label>{{ _('Confirm password') }} * <input type="password" name="confirm" minlength="8" required></label>
+    <div class="span"><button class="btn primary full">{{ _('Register') }}</button></div>
   </form>
-  <p class="muted center">Already registered? <a href="{{ url_for('login') }}">Sign in</a></p>
+  <p class="muted center">{{ _('Already registered?') }} <a href="{{ url_for('login') }}">{{ _('Sign in') }}</a></p>
 </div>
 {% endblock %}

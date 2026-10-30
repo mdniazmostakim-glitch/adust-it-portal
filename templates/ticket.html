@@ -1,24 +1,43 @@
-{% extends "base.html" %}{% from "_macros.html" import status, prio, due %}
+{% extends "base.html" %}{% from "_macros.html" import status, prio, due, stars %}
 {% block title %}{{ t.code }}{% endblock %}
 {% block content %}
-<p><a href="{{ url_for('ticket_list') }}">&larr; Requests</a></p>
+<div class="row-between">
+  <a href="{{ url_for('ticket_list') }}">&larr; {{ _('Requests') }}</a>
+  <a class="btn small" href="{{ url_for('ticket_print', ticket_id=t.id) }}" target="_blank">🖨 {{ _('Print job card') }}</a>
+</div>
 <div class="ticket-layout">
 <div>
   <div class="card">
     <div class="row-between"><span class="code big">{{ t.code }}</span>{{ status(t.status) }}</div>
     <h1>{{ t.title }}</h1>
-    <div class="desc">{{ t.description or 'No description.' }}</div>
-    {% if t.remarks %}<p class="remarks"><strong>Remarks:</strong> {{ t.remarks }}</p>{% endif %}
+    <div class="desc">{{ t.description or _('No description.') }}</div>
+    {% if t.remarks %}<p class="remarks"><strong>{{ _('Remarks') }}:</strong> {{ t.remarks }}</p>{% endif %}
     {% if t.attachment_name %}<p>📎 <a href="{{ url_for('download', kind='ticket', item_id=t.id) }}">{{ t.attachment_name }}</a></p>{% endif %}
   </div>
 
+  {% if can_approve %}
+  <div class="card approve-card">
+    <h2>✍ {{ _('Your approval is needed') }}</h2>
+    <p class="muted">{{ _('{name} from your department asked for this work. Approve it to send it to the IT section.', name=t.requester_name) }}</p>
+    <form method="post" action="{{ url_for('ticket_approve', ticket_id=t.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>{{ _('Comment (required when rejecting)') }} <textarea name="comment" rows="2"></textarea></label>
+      <div class="actions">
+        <button class="btn primary" name="decision" value="approve">✓ {{ _('Approve') }}</button>
+        <button class="btn danger" name="decision" value="reject">✕ {{ _('Reject') }}</button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
   <div class="card">
-    <h2>Updates</h2>
+    <h2>{{ _('Updates') }}</h2>
     <ol class="timeline">
     {% for u in updates %}
-      <li class="{{ 'internal' if u.internal }} {{ 'from-it' if u.user_role != 'user' }}">
-        <div class="meta"><strong>{{ u.user_name }}</strong> <span class="muted">· {{ 'IT' if u.user_role != 'user' else 'Requester' }} · {{ u.created_at|dt }}</span>
-          {% if u.internal %}<span class="badge st-on_hold">Internal note</span>{% endif %}</div>
+      <li class="{{ 'internal' if u.internal }} {{ 'from-it' if u.user_role in ('it', 'admin') }} {{ 'system' if u.user_role == 'system' }}">
+        <div class="meta"><strong>{{ _('System') if u.user_role == 'system' else u.user_name }}</strong>
+          <span class="muted">· {{ _('IT') if u.user_role in ('it', 'admin') else (_('Automatic') if u.user_role == 'system' else _('Requester')) }} · {{ u.created_at|dt }}</span>
+          {% if u.internal %}<span class="badge st-on_hold">{{ _('Internal note') }}</span>{% endif %}</div>
         {% if u.event %}<div class="event">{{ u.event }}</div>{% endif %}
         {% if u.body %}<div class="body">{{ u.body }}</div>{% endif %}
         {% if u.attachment_name %}<div>📎 <a href="{{ url_for('download', kind='update', item_id=u.id) }}">{{ u.attachment_name }}</a></div>{% endif %}
@@ -27,57 +46,89 @@
     </ol>
   </div>
 
+  {% set mine = t.requester_id == g.user.id %}
+  {% if is_it() or mine %}
   <div class="card">
     <form method="post" action="{{ url_for('ticket_update', ticket_id=t.id) }}" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       {% if is_it() %}
-        <h2>Update this request</h2>
+        <h2>{{ _('Update this request') }}</h2>
+        {% if t.status == 'pending_approval' %}<div class="flash warn">{{ _('Waiting for department head approval — status cannot be changed yet.') }}</div>{% endif %}
         <div class="grid">
-          <label>Status <select name="status">{% for s in it_statuses %}<option value="{{ s }}" {{ 'selected' if t.status == s }}>{{ STATUSES[s] }}</option>{% endfor %}</select></label>
-          <label>Assigned to <select name="assigned_to"><option value="">— Unassigned —</option>
-            {% for s in staff %}<option value="{{ s.id }}" {{ 'selected' if t.assigned_to == s.id }}>{{ s.name }}{{ ' (me)' if s.id == g.user.id }}</option>{% endfor %}</select></label>
-          <label>Priority <select name="priority">{% for p in range(1, 11) %}<option {{ 'selected' if t.priority == p }}>{{ p }}</option>{% endfor %}</select></label>
+          {% if t.status != 'pending_approval' %}
+          <label>{{ _('Status') }} <select name="status">{% for s in it_statuses %}<option value="{{ s }}" {{ 'selected' if t.status == s }}>{{ _(STATUSES[s]) }}</option>{% endfor %}</select></label>
+          {% endif %}
+          <label>{{ _('Assigned to') }} <select name="assigned_to"><option value="">— {{ _('Unassigned') }} —</option>
+            {% for s in staff %}<option value="{{ s.id }}" {{ 'selected' if t.assigned_to == s.id }}>{{ s.name }}{{ ' (' ~ _('me') ~ ')' if s.id == g.user.id }}</option>{% endfor %}</select></label>
+          <label>{{ _('Priority') }} <select name="priority">{% for p in range(1, 11) %}<option {{ 'selected' if t.priority == p }}>{{ p }}</option>{% endfor %}</select></label>
+          <label>{{ _('Device asset tag') }} <input name="asset_tag" value="{{ t.asset_tag or '' }}"></label>
         </div>
-        <label>Message / remarks to requester <textarea name="body" rows="3" placeholder="What was done, what is needed next…"></textarea></label>
+        <label>{{ _('Message / remarks to requester') }} <textarea name="body" rows="3" placeholder="{{ _('What was done, what is needed next…') }}"></textarea></label>
         <div class="row-between">
-          <label class="check"><input type="checkbox" name="internal" value="1"> Internal IT note (requester will not see it)</label>
+          <label class="check"><input type="checkbox" name="internal" value="1"> {{ _('Internal IT note (requester will not see it)') }}</label>
           <input type="file" name="file" class="file-inline">
         </div>
-        <button class="btn primary">Save update</button>
-      {% else %}
-        <h2>Add a comment</h2>
-        {% if t.status in ('closed', 'cancelled', 'rejected') %}
-          <p class="muted">This request is {{ STATUSES[t.status]|lower }}.</p>
-          {% if t.status == 'closed' %}<button class="btn" name="action" value="reopen">Reopen request</button>{% endif %}
+        <button class="btn primary">{{ _('Save update') }}</button>
+      {% endif %}
+      {% if mine and not is_it() %}
+        {% if t.status == 'resolved' %}
+          <h2>{{ _('Is the work done?') }}</h2>
+          <p class="muted">{{ _('The IT section marked this request as resolved. Please confirm and rate the service.') }}</p>
+          <div class="rating-input">
+            {% for n in range(5, 0, -1) %}<input type="radio" name="rating" value="{{ n }}" id="r{{ n }}"><label for="r{{ n }}" title="{{ n }}/5">★</label>{% endfor %}
+          </div>
+          <label>{{ _('Feedback (optional)') }} <textarea name="rating_comment" rows="2"></textarea></label>
+          <div class="actions">
+            <button class="btn primary" name="action" value="confirm">✓ {{ _('Confirm work is done') }}</button>
+            <button class="btn" name="action" value="reopen">{{ _('Not fixed — reopen') }}</button>
+          </div>
+          <hr>
+        {% endif %}
+        {% if t.status == 'closed' and not t.rating %}
+          <h2>{{ _('Rate this service') }}</h2>
+          <div class="rating-input">
+            {% for n in range(5, 0, -1) %}<input type="radio" name="rating" value="{{ n }}" id="r{{ n }}"><label for="r{{ n }}" title="{{ n }}/5">★</label>{% endfor %}
+          </div>
+          <label>{{ _('Feedback (optional)') }} <textarea name="rating_comment" rows="2"></textarea></label>
+          <div class="actions">
+            <button class="btn primary" name="action" value="rate">{{ _('Submit rating') }}</button>
+            <button class="btn" name="action" value="reopen">{{ _('Reopen request') }}</button>
+          </div>
+        {% elif t.status in ('closed', 'cancelled', 'rejected') %}
+          <p class="muted">{{ _('This request is {status}.', status=_(STATUSES[t.status])|lower) }}</p>
+          {% if t.status == 'closed' %}<button class="btn" name="action" value="reopen">{{ _('Reopen request') }}</button>{% endif %}
         {% else %}
-          <label><textarea name="body" rows="3" placeholder="Add information or ask the IT section…"></textarea></label>
+          <h2>{{ _('Add a comment') }}</h2>
+          <label><textarea name="body" rows="3" placeholder="{{ _('Add information or ask the IT section…') }}"></textarea></label>
           <input type="file" name="file" class="file-inline">
           <div class="actions">
-            <button class="btn primary">Send</button>
-            {% if t.status == 'resolved' %}
-              <button class="btn primary" name="action" value="confirm">✓ Confirm work is done</button>
-              <button class="btn" name="action" value="reopen">Not fixed — reopen</button>
-            {% endif %}
-            {% if t.status == 'new' %}<button class="btn danger" name="action" value="cancel" onclick="return confirm('Cancel this request?')">Cancel request</button>{% endif %}
+            <button class="btn primary">{{ _('Send') }}</button>
+            {% if t.status in ('new', 'pending_approval') %}<button class="btn danger" name="action" value="cancel" onclick="return confirm('{{ _('Cancel this request?') }}')">{{ _('Cancel request') }}</button>{% endif %}
           </div>
         {% endif %}
       {% endif %}
     </form>
   </div>
+  {% endif %}
 </div>
 
 <aside class="card details">
-  <h2>Details</h2>
+  <h2>{{ _('Details') }}</h2>
   <dl>
-    <dt>Category</dt><dd>{{ t.category or '—' }}</dd>
-    <dt>Priority</dt><dd>{{ prio(t) }}</dd>
-    <dt>Needed by</dt><dd>{{ due(t) }}</dd>
-    <dt>Assigned to</dt><dd>{{ t.assignee_name or 'IT Section (not yet assigned)' }}</dd>
-    <dt>Requested by</dt><dd>{{ t.requester_name }}<br><small class="muted">{{ t.requester_dept }}</small></dd>
-    {% if t.location %}<dt>Location</dt><dd>{{ t.location }}</dd>{% endif %}
-    <dt>Submitted</dt><dd>{{ t.created_at|dt }}</dd>
-    <dt>Last update</dt><dd>{{ t.updated_at|dt }}</dd>
-    {% if t.resolved_at %}<dt>Resolved</dt><dd>{{ t.resolved_at|dt }}</dd>{% endif %}
+    <dt>{{ _('Category') }}</dt><dd>{{ t.category or '—' }}</dd>
+    <dt>{{ _('Priority') }}</dt><dd>{{ prio(t) }}</dd>
+    <dt>{{ _('Needed by') }}</dt><dd>{{ due(t) }}</dd>
+    <dt>{{ _('Assigned to') }}</dt><dd>{{ t.assignee_name or _('IT Section (not yet assigned)') }}</dd>
+    <dt>{{ _('Requested by') }}</dt><dd>{{ t.requester_name }}<br><small class="muted">{{ t.requester_dept }}</small>
+      {% if is_it() and t.requester_phone %}<br><small>📞 <a href="tel:{{ t.requester_phone }}">{{ t.requester_phone }}</a></small>{% endif %}</dd>
+    {% if t.location %}<dt>{{ _('Location') }}</dt><dd>{{ t.location }}</dd>{% endif %}
+    {% if t.asset_tag %}<dt>{{ _('Device') }}</dt><dd>{% if is_it() %}<a href="{{ url_for('asset_detail', asset_id=t.asset_id) }}">{{ t.asset_tag }}</a>{% else %}{{ t.asset_tag }}{% endif %}<br><small class="muted">{{ t.asset_type }} {{ t.asset_name }}</small></dd>{% endif %}
+    {% if t.approver_name %}<dt>{{ _('Approval') }}</dt><dd>{{ t.approver_name }}<br><small class="muted">{{ t.approved_at|dt }}</small></dd>{% endif %}
+    <dt>{{ _('Submitted') }}</dt><dd>{{ t.created_at|dt }}</dd>
+    {% if t.first_response_at %}<dt>{{ _('First IT response') }}</dt><dd>{{ t.first_response_at|dt }}</dd>{% endif %}
+    <dt>{{ _('Last update') }}</dt><dd>{{ t.updated_at|dt }}</dd>
+    {% if t.resolved_at %}<dt>{{ _('Resolved') }}</dt><dd>{{ t.resolved_at|dt }}</dd>{% endif %}
+    {% if t.rating %}<dt>{{ _('Rating') }}</dt><dd>{{ stars(t.rating) }}{% if t.rating_comment %}<br><small>“{{ t.rating_comment }}”</small>{% endif %}</dd>{% endif %}
   </dl>
 </aside>
 </div>

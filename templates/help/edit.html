@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block title %}{{ _('Help article') }}{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>{{ _('Edit help article') if a else _('New help article') }}</h1>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>{{ _('Title') }} * <input name="title" required value="{{ request.form.title or (a.title if a else '') }}"></label>
+    <label>{{ _('Topic (category)') }}
+      <select name="category_id"><option value="">{{ _('General') }}</option>
+        {% for c in categories %}<option value="{{ c.id }}" {{ 'selected' if a and a.category_id == c.id }}>{{ c.name }}</option>{% endfor %}
+      </select></label>
+    <label>{{ _('Content') }} *
+      <textarea name="body" rows="16" required>{{ request.form.body or (a.body if a else '') }}</textarea></label>
+    <p class="hint">{{ _('Formatting: start a line with "## " for a heading, "- " for a bullet, "1. " for numbered steps. Links are clickable automatically.') }}</p>
+    <label class="check"><input type="checkbox" name="published" value="1" {{ 'checked' if not a or a.published }}> {{ _('Published (visible to everyone)') }}</label>
+    <div class="actions">
+      <button class="btn primary">{{ _('Save article') }}</button>
+      {% if a %}<button class="btn danger" name="action" value="delete" formnovalidate onclick="return confirm('{{ _('Delete this article?') }}')">{{ _('Delete') }}</button>{% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}

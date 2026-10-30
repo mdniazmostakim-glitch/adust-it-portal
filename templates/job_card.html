@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ _('Job card') }} {{ t.code }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='print.css') }}"></head>
+<body>
+<div class="toolbar"><button onclick="window.print()">🖨 {{ _('Print / Save as PDF') }}</button></div>
+<div class="sheet">
+  <header class="doc-head">
+    <img src="{{ url_for('static', filename='img/adust-logo.png') }}" alt="">
+    <div><strong>Atish Dipankar University of Science &amp; Technology</strong><br>IT Section — {{ _('Job card') }}</div>
+    <div class="doc-code">{{ t.code }}<br><small>{{ _(STATUSES[t.status]) }}</small></div>
+  </header>
+  <h1>{{ t.title }}</h1>
+  <table class="kv">
+    <tr><th>{{ _('Category') }}</th><td>{{ t.category or '—' }}</td><th>{{ _('Priority') }}</th><td>{{ t.priority }}/10{% if t.urgent %} — {{ _('URGENT') }}{% endif %}</td></tr>
+    <tr><th>{{ _('Requested by') }}</th><td>{{ t.requester_name }}<br>{{ t.requester_dept }}</td><th>{{ _('Contact') }}</th><td>{% if t.requester_phone %}{{ t.requester_phone }}<br>{% endif %}{{ t.requester_email }}</td></tr>
+    <tr><th>{{ _('Location') }}</th><td>{{ t.location or '—' }}</td><th>{{ _('Device') }}</th><td>{{ t.asset_tag or '—' }} {{ t.asset_type or '' }} {{ t.asset_name or '' }}</td></tr>
+    <tr><th>{{ _('Submitted') }}</th><td>{{ t.created_at|dt }}</td><th>{{ _('Needed by') }}</th><td>{{ t.due_date|d }}</td></tr>
+    <tr><th>{{ _('Assigned to') }}</th><td colspan="3">{{ t.assignee_name or '—' }}</td></tr>
+  </table>
+  <h2>{{ _('Description') }}</h2>
+  <div class="box">{{ t.description or '—' }}{% if t.remarks %}<br><br><strong>{{ _('Remarks') }}:</strong> {{ t.remarks }}{% endif %}</div>
+  {% set notes = updates|selectattr('body')|list %}
+  {% if notes %}
+  <h2>{{ _('Updates') }}</h2>
+  <table class="log">{% for u in notes %}<tr><td class="nowrap">{{ u.created_at|dt }}</td><td>{{ u.user_name }}</td><td>{{ u.body }}</td></tr>{% endfor %}</table>
+  {% endif %}
+  <h2>{{ _('Work done (filled by technician)') }}</h2>
+  <div class="box lines"></div>
+  <table class="kv"><tr><th>{{ _('Parts used') }}</th><td></td><th>{{ _('Time spent') }}</th><td></td></tr></table>
+  <div class="signs">
+    <div><span></span>{{ _('Technician signature & date') }}</div>
+    <div><span></span>{{ _('Requester signature & date') }}</div>
+  </div>
+</div>
+</body></html>
