@@ -1,0 +1,31 @@
+{% extends "base.html" %}{% from "_status.html" import badge, due %}
+{% block title %}My work{% endblock %}
+{% block content %}
+<h1>Assigned work</h1>
+<div class="stats">
+  <div class="stat"><b>{{ counts.total }}</b><span>Total</span></div>
+  <div class="stat"><b>{{ counts.pending }}</b><span>Not submitted</span></div>
+  <div class="stat"><b>{{ counts.submitted }}</b><span>Pending review</span></div>
+  <div class="stat"><b>{{ counts.needs_revision }}</b><span>Needs revision</span></div>
+  <div class="stat"><b>{{ counts.approved }}</b><span>Approved</span></div>
+</div>
+<div class="card">
+{% if assignments %}
+<table>
+  <thead><tr><th>Work</th><th>Due</th><th>Status</th><th>Last submitted</th><th></th></tr></thead>
+  <tbody>
+  {% for a in assignments %}
+  <tr>
+    <td data-label="Work"><a href="{{ url_for('assignment_detail', assignment_id=a.id) }}">{{ a.title }}</a></td>
+    <td data-label="Due">{{ due(a.due_date) }}</td>
+    <td data-label="Status">{{ badge(a.latest_status) }}</td>
+    <td data-label="Last submitted">{{ a.latest_at|dt }}</td>
+    <td><a class="btn small" href="{{ url_for('assignment_detail', assignment_id=a.id) }}">
+      {% if not a.latest_status %}Submit{% elif a.latest_status == 'needs_revision' %}Resubmit{% else %}View{% endif %}</a></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="muted">No work has been assigned to you yet.</p>{% endif %}
+</div>
+{% endblock %}

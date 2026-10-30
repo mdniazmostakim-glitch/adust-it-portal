@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% block title %}Register{% endblock %}
+{% block content %}
+<div class="auth card">
+  <h1>Create an account</h1>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Full name <input name="name" required value="{{ request.form.name }}"></label>
+    <label>Email <input type="email" name="email" required value="{{ request.form.email }}"></label>
+    <label>Department / Office <input name="department" required placeholder="e.g. CSE, Accounts, Registrar" value="{{ request.form.department }}"></label>
+    <label>Password <input type="password" name="password" minlength="8" required></label>
+    <label>Confirm password <input type="password" name="confirm" minlength="8" required></label>
+    <button class="btn primary full">Register</button>
+  </form>
+  <p class="muted center">Already registered? <a href="{{ url_for('login') }}">Sign in</a></p>
+</div>
+{% endblock %}

@@ -1,0 +1,7 @@
+{% macro badge(status) -%}
+{% if status %}<span class="badge {{ status }}">{{ STATUS_LABELS[status] }}</span>
+{% else %}<span class="badge pending">Not submitted</span>{% endif %}
+{%- endmacro %}
+{% macro due(d) -%}
+{% if d %}<span class="due {{ d|due_state }}">{{ d }}{% if d|due_state == 'overdue' %} · overdue{% endif %}</span>{% else %}<span class="muted">No deadline</span>{% endif %}
+{%- endmacro %}

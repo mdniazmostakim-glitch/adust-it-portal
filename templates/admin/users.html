@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<h1>Users</h1>
+<div class="card">
+  <h2>Add a user</h2>
+  <form method="post" class="grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Full name <input name="name" required></label>
+    <label>Email <input type="email" name="email" required></label>
+    <label>Department <input name="department" required></label>
+    <label>Role <select name="role"><option value="member">Member (submits work)</option><option value="admin">IT admin (reviews work)</option></select></label>
+    <label>Initial password <input type="password" name="password" minlength="8" required></label>
+    <div class="grid-end"><button class="btn primary">Create account</button></div>
+  </form>
+</div>
+<div class="card">
+  <table>
+    <thead><tr><th>Name</th><th>Email</th><th>Department</th><th>Role</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for u in users %}
+    <tr class="{{ '' if u.active else 'inactive' }}">
+      <td data-label="Name">{{ u.name }}</td>
+      <td data-label="Email">{{ u.email }}</td>
+      <td data-label="Department">{{ u.department }}</td>
+      <td data-label="Role">{{ 'IT admin' if u.role == 'admin' else 'Member' }}</td>
+      <td data-label="Status">{{ 'Active' if u.active else 'Deactivated' }}</td>
+      <td>{% if u.id != g.user.id %}
+        <form method="post" action="{{ url_for('admin_toggle_user', user_id=u.id) }}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn small {{ 'danger' if u.active }}">{{ 'Deactivate' if u.active else 'Activate' }}</button>
+        </form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

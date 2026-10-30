@@ -1,0 +1,38 @@
+{% extends "base.html" %}{% from "_status.html" import badge, due %}
+{% block title %}{{ assignment.title }}{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('admin_dashboard') }}">&larr; Dashboard</a></p>
+<div class="card">
+  <div class="row-between">
+    <h1>{{ assignment.title }}</h1>
+    <div class="actions">
+      <a class="btn small" href="{{ url_for('admin_edit_assignment', assignment_id=assignment.id) }}">Edit</a>
+      <form method="post" action="{{ url_for('admin_delete_assignment', assignment_id=assignment.id) }}" class="inline"
+            onsubmit="return confirm('Delete this assignment and all its submissions?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn small danger">Delete</button>
+      </form>
+    </div>
+  </div>
+  <p class="muted">Created by {{ assignment.creator_name }} on {{ assignment.created_at|dt }} · Due: {{ due(assignment.due_date) }}</p>
+  <div class="desc">{{ assignment.description or 'No description.' }}</div>
+</div>
+<div class="card">
+  <h2>Assignees ({{ people|length }})</h2>
+  <table>
+    <thead><tr><th>Name</th><th>Department</th><th>Status</th><th>Last submitted</th><th>Versions</th><th></th></tr></thead>
+    <tbody>
+    {% for p in people %}
+    <tr>
+      <td data-label="Name">{{ p.name }}<br><small class="muted">{{ p.email }}</small></td>
+      <td data-label="Department">{{ p.department }}</td>
+      <td data-label="Status">{{ badge(p.status) }}</td>
+      <td data-label="Last submitted">{{ p.submitted_at|dt }}</td>
+      <td data-label="Versions">{{ p.attempts }}</td>
+      <td>{% if p.sub_id %}<a class="btn small {{ 'primary' if p.status == 'submitted' }}" href="{{ url_for('admin_review', submission_id=p.sub_id) }}">{{ 'Review' if p.status == 'submitted' else 'View' }}</a>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

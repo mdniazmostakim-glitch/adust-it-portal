@@ -1,0 +1,47 @@
+{% extends "base.html" %}{% from "_status.html" import badge, due %}
+{% block title %}IT Dashboard{% endblock %}
+{% block content %}
+<div class="row-between"><h1>IT Section dashboard</h1><a class="btn primary" href="{{ url_for('admin_new_assignment') }}">+ Assign work</a></div>
+<div class="stats">
+  <div class="stat"><b>{{ stats.assignments }}</b><span>Assignments</span></div>
+  <div class="stat"><b>{{ stats.members }}</b><span>Active members</span></div>
+  <div class="stat highlight"><b>{{ stats.to_review }}</b><span>Awaiting review</span></div>
+</div>
+<div class="card">
+  <h2>Assignments</h2>
+  {% if assignments %}
+  <table>
+    <thead><tr><th>Title</th><th>Due</th><th>Submitted</th><th>To review</th></tr></thead>
+    <tbody>
+    {% for a in assignments %}
+    <tr>
+      <td data-label="Title"><a href="{{ url_for('admin_assignment', assignment_id=a.id) }}">{{ a.title }}</a></td>
+      <td data-label="Due">{{ due(a.due_date) }}</td>
+      <td data-label="Submitted">{{ a.submitted }} / {{ a.assigned }}
+        <div class="bar"><i style="width: {{ (100 * a.submitted / a.assigned) if a.assigned else 0 }}%"></i></div></td>
+      <td data-label="To review">{% if a.to_review %}<span class="badge submitted">{{ a.to_review }}</span>{% else %}<span class="muted">0</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">No assignments yet. <a href="{{ url_for('admin_new_assignment') }}">Assign some work</a>.</p>{% endif %}
+</div>
+<div class="card">
+  <h2>Recent submissions</h2>
+  {% if recent %}
+  <table>
+    <thead><tr><th>Who</th><th>Work</th><th>When</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for s in recent %}
+    <tr>
+      <td data-label="Who">{{ s.user_name }}</td>
+      <td data-label="Work"><a href="{{ url_for('admin_review', submission_id=s.id) }}">{{ s.title }}</a></td>
+      <td data-label="When">{{ s.submitted_at|dt }}</td>
+      <td data-label="Status">{{ badge(s.status) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">Nothing submitted yet.</p>{% endif %}
+</div>
+{% endblock %}

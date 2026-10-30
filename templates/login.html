@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% block title %}Sign in{% endblock %}
+{% block content %}
+<div class="auth card">
+  <h1>Sign in</h1>
+  <p class="muted">Submit your assigned work to the ADUST IT section.</p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Email <input type="email" name="email" required autofocus value="{{ request.form.email }}"></label>
+    <label>Password <input type="password" name="password" required></label>
+    <button class="btn primary full">Sign in</button>
+  </form>
+  <p class="muted center">No account? <a href="{{ url_for('register') }}">Register</a></p>
+</div>
+{% endblock %}

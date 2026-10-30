@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Work Submission{% endblock %} · ADUST IT Section</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="brand" href="{{ url_for('index') }}">
+      <span class="logo">AD</span>
+      <span><strong>ADUST</strong> IT Section<br><small>Work Submission Portal</small></span>
+    </a>
+    {% if g.user %}
+    <nav>
+      {% if g.user.role == 'admin' %}
+        <a href="{{ url_for('admin_dashboard') }}">Dashboard</a>
+        <a href="{{ url_for('admin_new_assignment') }}">Assign work</a>
+        <a href="{{ url_for('admin_users') }}">Users</a>
+      {% else %}
+        <a href="{{ url_for('dashboard') }}">My work</a>
+      {% endif %}
+      <a href="{{ url_for('change_password') }}">Password</a>
+      <form method="post" action="{{ url_for('logout') }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="link">Sign out ({{ g.user.name.split()[0] }})</button>
+      </form>
+    </nav>
+    {% endif %}
+  </div>
+</header>
+<main class="wrap">
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in msgs %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+<footer class="wrap footer">Atish Dipankar University of Science and Technology · IT Section</footer>
+</body>
+</html>
