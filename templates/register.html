@@ -1,8 +1,11 @@
 {% extends "base.html" %}{% block title %}Register{% endblock %}
 {% block content %}
 <div class="auth card wide">
-  <img class="auth-logo" src="{{ url_for('static', filename='img/adust-logo-full.png') }}" alt="Atish Dipankar University of Science &amp; Technology (ADUST)">
-  <p class="auth-kicker">IT Section · Service Request Portal</p>
+  <div class="auth-head">
+    <img class="auth-logo" src="{{ url_for('static', filename='img/adust-logo.png') }}" alt="ADUST logo">
+    <div><strong>Atish Dipankar University of Science &amp; Technology</strong>
+      <p class="auth-kicker">IT Section · Service Request Portal</p></div>
+  </div>
   <h1>Create an account</h1>
   <form method="post" class="grid">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

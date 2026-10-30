@@ -11,9 +11,8 @@
 <header class="topbar">
   <div class="wrap topbar-inner">
     <a class="brand" href="{{ url_for('index') }}">
-      <img class="brand-full" src="{{ url_for('static', filename='img/adust-logo-white.png') }}" alt="Atish Dipankar University of Science &amp; Technology">
-      <img class="brand-mark" src="{{ url_for('static', filename='img/adust-logo.png') }}" alt="ADUST">
-      <span class="brand-sub"><strong>IT Section</strong><br><small>Service Request Portal</small></span>
+      <img class="brand-mark" src="{{ url_for('static', filename='img/adust-logo.png') }}" alt="ADUST logo">
+      <span class="brand-text"><strong>ADUST IT Section</strong><br><small>Service Request Portal</small></span>
     </a>
     {% if g.user %}
     <button class="menu-btn" onclick="document.body.classList.toggle('nav-open')" aria-label="Menu">☰</button>
