@@ -10,7 +10,7 @@ works in **English and Bangla**, and runs on a single small server (Python + SQL
 
 | Area | What it does |
 |---|---|
-| **University network only** | Only allowed IPs/ranges can open the site; others see "Access restricted". Managed in *Admin → Network access*. Admin cannot lock themselves out. |
+| **University network only** | Only allowed IPs/ranges can open the site (ADUST: `172.20.13.0/24`); others see "Access restricted". Managed in *Admin → Network access*. Admin cannot lock themselves out. |
 | **Sign-in** | **Any email** (institutional or personal, e.g. Gmail) **or** user ID + password. Anyone on the university network can register; set `PORTAL_ALLOWED_EMAIL_DOMAINS` to limit domains. **Forgot password** by email link (1 hour, single use). **Lock-out** after 5 wrong passwords (15 min). *Optional, off by default:* sign in with the university webmail password (IMAP). |
 | **Assign work to IT** | Category, priority 1–10, urgent flag, needed-by date, which IT staff, location, **device (asset tag)**, description, remarks, attachment. Code like `IT-2026-0001`. Matching **help articles are suggested** while filling the form. |
 | **Department-head approval** | Categories marked "needs approval" (e.g. *New equipment / Purchase*) go first to the requester's department head, who approves or rejects with a reason. |
