@@ -36,6 +36,14 @@ flask --app app create-admin
 flask --app app run --host 0.0.0.0
 ```
 
+## Run on a Windows PC (testing)
+
+1. Install Python from python.org, then unzip the project (e.g. `G:\adust-it-portal`).
+2. Open `windows\start-portal.ps1` in Notepad and check the settings at the top (data folder, backup copy, network).
+3. Right-click `windows\allow-firewall.bat` → **Run as administrator** (once).
+4. Double-click `windows\create-admin.bat` (once) to create the IT admin.
+5. Double-click `windows\start-portal.bat` every time you want to run the portal.
+
 ## Deploy on the university server (Ubuntu)
 
 ```bash
