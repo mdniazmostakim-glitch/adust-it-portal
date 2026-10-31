@@ -24,7 +24,7 @@
     <div class="span" id="help-suggest" hidden>
       <div class="suggest">💡 <strong>{{ _('These help articles may solve it right away:') }}</strong><ul></ul></div>
     </div>
-    <div class="span" id="approval-note" hidden><div class="flash warn">✍ {{ _('This category needs approval from your department head before it goes to the IT section.') }}</div></div>
+    <div class="span" id="approval-note" hidden><div class="flash warn">✍ {{ _('This category needs approval from your department chairman (or coordinator) before it goes to the IT section.') }}</div></div>
     <label class="check urgent-box"><input type="checkbox" name="urgent" value="1" {{ 'checked' if request.form.urgent }}> <span><strong>{{ _('Urgent') }}</strong> — {{ _('work is blocked, needs immediate attention') }}</span></label>
     <label>{{ _('Location (building / room)') }}
       <input name="location" placeholder="{{ _('e.g. Main campus, Room 402') }}" value="{{ request.form.location }}"></label>
@@ -45,7 +45,7 @@
       list = box.querySelector('ul'), note = document.getElementById('approval-note');
   function update() {
     var opt = sel.options[sel.selectedIndex];
-    note.hidden = !(opt && opt.dataset.approval === '1'{% if is_it() or g.user.is_approver %} && false{% endif %});
+    note.hidden = !(opt && opt.dataset.approval === '1'{% if self_approves %} && false{% endif %});
     if (!sel.value) { box.hidden = true; return; }
     fetch('{{ url_for("api_help") }}?category=' + sel.value, { credentials: 'same-origin' })
       .then(function (r) { return r.json(); })

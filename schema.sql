@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS users (
     department TEXT NOT NULL DEFAULT '',
     designation TEXT NOT NULL DEFAULT '',
     role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'it', 'admin')),
-    is_approver INTEGER NOT NULL DEFAULT 0,      -- department head: approves requests from their department
+    is_approver INTEGER NOT NULL DEFAULT 0,      -- 1 when approver_title is set (kept for quick checks)
+    approver_title TEXT NOT NULL DEFAULT '',     -- '', 'chairman', 'head' (head of office) or 'coordinator'
     lang TEXT NOT NULL DEFAULT 'en',
     password_hash TEXT,
     active INTEGER NOT NULL DEFAULT 1,

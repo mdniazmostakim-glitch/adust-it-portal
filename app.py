@@ -86,6 +86,12 @@ STATUSES = {
 OPEN_STATUSES = ("new", "in_progress", "on_hold")
 IT_SETTABLE = ("new", "in_progress", "on_hold", "resolved", "rejected", "closed")
 ROLES = {"user": "Requester", "it": "IT staff", "admin": "IT admin"}
+# Who approves a department's requests. Chairman / head of office come first;
+# a coordinator approves when the department has no chairman, or when the
+# chairman has not responded within the reminder time (Settings).
+APPROVER_TITLES = {"": "No approval role", "chairman": "Chairman", "head": "Head of office",
+                   "coordinator": "Coordinator"}
+PRIMARY_TITLES = ("chairman", "head")
 
 ASSET_TYPES = [
     "Desktop PC", "Laptop", "Monitor", "Printer", "Scanner", "Photocopier", "Projector",
@@ -191,6 +197,7 @@ def init_db():
 # Existing databases get them on start-up; existing rows take the default.
 MIGRATIONS = [
     ("users", "approved", "INTEGER NOT NULL DEFAULT 1"),
+    ("users", "approver_title", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 
@@ -199,6 +206,8 @@ def migrate(db):
         cols = {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
         if column not in cols:
             db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+    # Before titles existed every approver was a plain "department head": treat them as chairman.
+    db.execute("UPDATE users SET approver_title = 'chairman' WHERE is_approver = 1 AND approver_title = ''")
 
 
 def get_setting(key):
@@ -388,11 +397,7 @@ def unread_count():
 
 
 def approvals_count():
-    if g.user is None or not (g.user["is_approver"] or is_admin()):
-        return 0
-    sql, args = approvals_scope()
-    return get_db().execute(f"SELECT COUNT(*) FROM tickets t JOIN users r ON r.id = t.requester_id "
-                            f"WHERE t.status = 'pending_approval' AND {sql}", args).fetchone()[0]
+    return len(pending_for_me())
 
 
 def active_announcements():
@@ -407,6 +412,7 @@ def departments():
 
 app.jinja_env.globals.update(
     _=_, csrf_token=csrf_token, STATUSES=STATUSES, ROLES=ROLES, OPEN_STATUSES=OPEN_STATUSES,
+    APPROVER_TITLES=APPROVER_TITLES,
     ASSET_TYPES=ASSET_TYPES, ASSET_STATUSES=ASSET_STATUSES, FREQUENCIES=FREQUENCIES, LEVELS=LEVELS,
     is_it=is_it, is_admin=is_admin, unread_count=unread_count, approvals_count=approvals_count,
     active_announcements=active_announcements, departments=departments,
@@ -696,19 +702,43 @@ def it_recipients(ticket):
     return it_team_ids()
 
 
-def approver_ids(requester):
+def department_approvers(department, exclude_id=None):
+    """(primary, coordinators) user ids for a department."""
     rows = get_db().execute(
-        "SELECT id FROM users WHERE active = 1 AND is_approver = 1 AND id != ? "
-        "AND lower(department) = lower(?) AND department != ''",
-        (requester["id"], requester["department"])).fetchall()
-    return [r[0] for r in rows] or it_team_ids(admins_only=True)
+        "SELECT id, approver_title FROM users WHERE active = 1 AND approved = 1 AND approver_title != '' "
+        "AND department != '' AND lower(department) = lower(?) AND id IS NOT ?",
+        (department or "", exclude_id)).fetchall()
+    primary = [r["id"] for r in rows if r["approver_title"] in PRIMARY_TITLES]
+    coordinators = [r["id"] for r in rows if r["approver_title"] == "coordinator"]
+    return primary, coordinators
 
 
-def approvals_scope():
-    """SQL condition (on requester r) for the tickets the current user may approve."""
-    if is_admin():
-        return "1=1", ()
-    return "lower(r.department) = lower(?) AND r.id != ?", (g.user["department"], g.user["id"])
+def approver_ids(requester, include_coordinators=False):
+    """Chairman/head of office if the department has one, otherwise the
+    coordinator(s); coordinators are added once the chairman is overdue.
+    Falls back to IT admins when the department has no approver at all."""
+    primary, coordinators = department_approvers(requester["department"], requester["id"])
+    if primary:
+        return primary + (coordinators if include_coordinators else [])
+    return coordinators or it_team_ids(admins_only=True)
+
+
+def needs_department_approval(requester):
+    """The department's top approver does not need anyone's approval."""
+    if is_it(requester) or requester["approver_title"] in PRIMARY_TITLES:
+        return False
+    if requester["approver_title"] == "coordinator":
+        primary, _c = department_approvers(requester["department"], requester["id"])
+        return bool(primary)
+    return True
+
+
+def pending_for_me():
+    """Pending-approval tickets the signed-in user may decide on."""
+    if g.user is None or not (g.user["is_approver"] or is_admin()):
+        return []
+    rows = get_db().execute(f"{TICKET_SELECT} WHERE t.status = 'pending_approval' ORDER BY t.urgent DESC, t.id").fetchall()
+    return [t for t in rows if can_approve(t)]
 
 
 def add_update(ticket_id, user_id, event="", body="", internal=0, attachment=(None, None)):
@@ -1159,7 +1189,7 @@ def create_ticket(requester, title, category_id, priority=5, urgent=False, due_d
     db = get_db()
     category = db.execute("SELECT * FROM categories WHERE id = ?", (category_id,)).fetchone()
     needs_approval = (category is not None and category["needs_approval"] and recurring_id is None
-                      and not is_it(requester) and not requester["is_approver"])
+                      and needs_department_approval(requester))
     status = "pending_approval" if needs_approval else "new"
     ts = now()
     cur = db.execute(
@@ -1201,7 +1231,8 @@ def new_ticket():
     assets = db.execute("SELECT tag, type, name, location FROM assets WHERE status != 'retired' ORDER BY tag").fetchall()
 
     def form_page(code=200):
-        return render_template("new_ticket.html", categories=categories, staff=staff, assets=assets), code
+        return render_template("new_ticket.html", categories=categories, staff=staff, assets=assets,
+                               self_approves=not needs_department_approval(g.user)), code
 
     if request.method == "POST":
         f = request.form
@@ -1250,14 +1281,20 @@ def new_ticket():
     return form_page()
 
 
+def approver_label(user):
+    title = APPROVER_TITLES.get(user["approver_title"]) if user["approver_title"] else "IT admin"
+    return f"{title}, {user['department']}" if user["department"] else title
+
+
 def can_approve(t):
     if g.user is None or t["status"] != "pending_approval":
         return False
     if is_admin():
         return True
-    return bool(g.user["is_approver"] and t["requester_dept"]
-                and t["requester_dept"].lower() == g.user["department"].lower()
-                and t["requester_id"] != g.user["id"])
+    if not g.user["is_approver"] or t["requester_id"] == g.user["id"]:
+        return False
+    requester = {"id": t["requester_id"], "department": t["requester_dept"]}
+    return g.user["id"] in approver_ids(requester, include_coordinators=bool(t["escalated_at"]))
 
 
 def load_ticket(ticket_id):
@@ -1287,8 +1324,14 @@ def ticket_detail(ticket_id):
     updates = ticket_timeline(ticket_id, is_it())
     db.execute("UPDATE notifications SET is_read = 1 WHERE user_id = ? AND ticket_id = ?", (g.user["id"], ticket_id))
     db.commit()
+    waiting_on = []
+    if ticket["status"] == "pending_approval":
+        ids = approver_ids({"id": ticket["requester_id"], "department": ticket["requester_dept"]},
+                           include_coordinators=bool(ticket["escalated_at"]))
+        marks = ",".join("?" * len(ids)) or "NULL"
+        waiting_on = db.execute(f"SELECT name, approver_title, role FROM users WHERE id IN ({marks})", ids).fetchall()
     return render_template("ticket.html", t=ticket, updates=updates, staff=it_staff(),
-                           it_statuses=IT_SETTABLE, can_approve=can_approve(ticket))
+                           it_statuses=IT_SETTABLE, can_approve=can_approve(ticket), waiting_on=waiting_on)
 
 
 @app.route("/tickets/<int:ticket_id>/print")
@@ -1311,7 +1354,7 @@ def ticket_approve(ticket_id):
     if decision == "approve":
         db.execute("UPDATE tickets SET status = 'new', approved_by = ?, approved_at = ?, updated_at = ? WHERE id = ?",
                    (g.user["id"], ts, ts, ticket_id))
-        add_update(ticket_id, g.user["id"], "Approved by department head", comment)
+        add_update(ticket_id, g.user["id"], f"Approved by {approver_label(g.user)}", comment)
         db.commit()
         t = db.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
         notify([t["requester_id"]], t, f"Your request was approved by {g.user['name']} and sent to the IT section")
@@ -1323,7 +1366,7 @@ def ticket_approve(ticket_id):
             return redirect(url_for("ticket_detail", ticket_id=ticket_id))
         db.execute("UPDATE tickets SET status = 'rejected', approved_by = ?, approved_at = ?, updated_at = ? "
                    "WHERE id = ?", (g.user["id"], ts, ts, ticket_id))
-        add_update(ticket_id, g.user["id"], "Not approved by department head", comment)
+        add_update(ticket_id, g.user["id"], f"Not approved by {approver_label(g.user)}", comment)
         db.commit()
         t = db.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
         notify([t["requester_id"]], t, f"Your request was not approved by {g.user['name']}: {comment}")
@@ -1338,10 +1381,7 @@ def ticket_approve(ticket_id):
 def approvals():
     if not (g.user["is_approver"] or is_admin()):
         abort(403)
-    sql, args = approvals_scope()
-    tickets = get_db().execute(
-        f"{TICKET_SELECT} WHERE t.status = 'pending_approval' AND {sql} ORDER BY t.urgent DESC, t.id", args).fetchall()
-    return render_template("approvals.html", tickets=tickets)
+    return render_template("approvals.html", tickets=pending_for_me())
 
 
 @app.route("/tickets/<int:ticket_id>/update", methods=["POST"])
@@ -1864,9 +1904,10 @@ def admin_users():
         if role not in ROLES or not f.get("name", "").strip() or not EMAIL_RE.match(email):
             flash(_("Name, email and a valid role are required."), "error")
             return redirect(url_for("admin_users"))
+        title = f.get("approver_title", "") if f.get("approver_title", "") in APPROVER_TITLES else ""
         fields = (f.get("login_id", "").strip().lower() or None, f["name"].strip(), email,
                   f.get("phone", "").strip(), f.get("department", "").strip(),
-                  f.get("designation", "").strip(), role, 1 if f.get("is_approver") else 0)
+                  f.get("designation", "").strip(), role, 1 if title else 0, title)
         password = f.get("password", "")
         if password and len(password) < 8:
             flash(_("Password must be at least 8 characters."), "error")
@@ -1877,13 +1918,13 @@ def admin_users():
                     flash(_("You cannot remove your own admin role."), "error")
                     return redirect(url_for("admin_users"))
                 db.execute("UPDATE users SET login_id=?, name=?, email=?, phone=?, department=?, designation=?, "
-                           "role=?, is_approver=? WHERE id=?", (*fields, int(uid)))
+                           "role=?, is_approver=?, approver_title=? WHERE id=?", (*fields, int(uid)))
                 if password:
                     db.execute("UPDATE users SET password_hash=? WHERE id=?", (generate_password_hash(password), int(uid)))
                 flash(_("User updated."), "success")
             else:
                 db.execute("INSERT INTO users (login_id, name, email, phone, department, designation, role, is_approver, "
-                           "password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                           "approver_title, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                            (*fields, generate_password_hash(password) if password else None, now()))
                 flash(_("Account for {name} created.", name=fields[1]), "success")
             db.commit()
@@ -1913,8 +1954,10 @@ def admin_verify_user(user_id):
         abort(404)
     if request.form.get("decision") == "approve":
         role = request.form.get("role") if request.form.get("role") in ROLES else "user"
-        db.execute("UPDATE users SET approved = 1, role = ?, is_approver = ? WHERE id = ?",
-                   (role, 1 if request.form.get("is_approver") else 0, user_id))
+        title = request.form.get("approver_title", "")
+        title = title if title in APPROVER_TITLES else ""
+        db.execute("UPDATE users SET approved = 1, role = ?, is_approver = ?, approver_title = ? WHERE id = ?",
+                   (role, 1 if title else 0, title, user_id))
         db.commit()
         base = app.config["BASE_URL"] or request.host_url.rstrip("/")
         send_email([user["email"]], "ADUST IT Portal — your account is approved",
@@ -1961,7 +2004,9 @@ def admin_departments():
         return redirect(url_for("admin_departments"))
     rows = db.execute(
         "SELECT d.*, (SELECT COUNT(*) FROM users u WHERE lower(u.department) = lower(d.name)) AS people, "
-        "(SELECT group_concat(u.name, ', ') FROM users u WHERE u.is_approver = 1 AND u.active = 1 "
+        "(SELECT group_concat(u.name || ' (' || CASE u.approver_title WHEN 'coordinator' THEN 'Coordinator' "
+        "WHEN 'head' THEN 'Head of office' ELSE 'Chairman' END || ')', ', ') FROM users u "
+        "WHERE u.is_approver = 1 AND u.active = 1 "
         " AND lower(u.department) = lower(d.name)) AS heads FROM departments d ORDER BY d.name").fetchall()
     return render_template("admin/departments.html", rows=rows)
 
@@ -2287,8 +2332,13 @@ def housekeeping():
                         "AND created_at < ?", (cutoff,)).fetchall():
         requester = db.execute("SELECT * FROM users WHERE id = ?", (t["requester_id"],)).fetchone()
         db.execute("UPDATE tickets SET escalated_at = ? WHERE id = ?", (now(), t["id"]))
+        before = set(approver_ids(requester))
+        after = set(approver_ids(requester, include_coordinators=True))
+        if after - before:
+            add_update(t["id"], None, "No decision yet: the coordinator can now also approve", internal=0)
         db.commit()
-        notify(approver_ids(requester), t, f"Reminder: request waiting for your approval: {t['title']}")
+        notify(before, t, f"Reminder: request waiting for your approval: {t['title']}")
+        notify(after - before, t, f"Approval needed (chairman has not responded): {t['title']}")
         result["approval_reminders"] += 1
 
     # 4. Resolved but never confirmed by the requester

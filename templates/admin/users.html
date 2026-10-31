@@ -19,7 +19,7 @@
         <form method="post" action="{{ url_for('admin_verify_user', user_id=u.id) }}" class="verify-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <select name="role" aria-label="{{ _('Role') }}">{% for k, v in ROLES.items() %}<option value="{{ k }}">{{ _(v) }}</option>{% endfor %}</select>
-          <label class="check"><input type="checkbox" name="is_approver" value="1"> {{ _('Dept. head') }}</label>
+          <select name="approver_title" aria-label="{{ _('Approval role') }}">{% for k, v in APPROVER_TITLES.items() %}<option value="{{ k }}">{{ _(v) }}</option>{% endfor %}</select>
           <div class="actions">
             <button class="btn small primary" name="decision" value="approve">✓ {{ _('Approve') }}</button>
             <button class="btn small danger" name="decision" value="reject" onclick="return confirm('{{ _('Reject and remove this account request?') }}')">✕ {{ _('Reject') }}</button>
@@ -45,7 +45,9 @@
     <label>{{ _('Designation') }} <input name="designation" value="{{ edit.designation if edit }}"></label>
     <label>{{ _('Role') }} <select name="role">{% for k, v in ROLES.items() %}<option value="{{ k }}" {{ 'selected' if edit and edit.role == k }}>{{ _(v) }}</option>{% endfor %}</select></label>
     <label>{{ _('New password (leave blank to keep)') if edit else _('Password (blank = webmail login only)') }} <input type="password" name="password" minlength="8"></label>
-    <label class="check span"><input type="checkbox" name="is_approver" value="1" {{ 'checked' if edit and edit.is_approver }}> {{ _('Department head — approves requests from this department') }}</label>
+    <label>{{ _('Approval role') }}
+      <select name="approver_title">{% for k, v in APPROVER_TITLES.items() %}<option value="{{ k }}" {{ 'selected' if edit and edit.approver_title == k }}>{{ _(v) }}</option>{% endfor %}</select></label>
+    <p class="hint span">{{ _('Purchase/approval requests go to the department Chairman (or Head of office). If the department has no chairman they go to the Coordinator. If the chairman does not respond within the reminder time, the coordinator can also approve.') }}</p>
     <div class="span"><button class="btn primary">{{ _('Save changes') if edit else _('Create account') }}</button>{% if edit %} <a class="btn" href="{{ url_for('admin_users') }}">{{ _('Cancel') }}</a>{% endif %}</div>
   </form>
   <p class="hint">{{ _('Requester = staff who send work · IT staff = works on requests · IT admin = IT staff + manages the portal.') }}</p>
@@ -63,7 +65,7 @@
       <td data-label="{{ _('Name') }}">{{ u.name }}<br><small class="muted">{{ u.designation }}</small></td>
       <td data-label="{{ _('Email') }}">{{ u.email }}<br><small class="muted">{{ u.login_id or '' }}</small></td>
       <td data-label="{{ _('Department') }}">{{ u.department }}</td>
-      <td data-label="{{ _('Role') }}"><span class="badge role-{{ u.role }}">{{ _(ROLES[u.role]) }}</span>{% if u.is_approver %} <span class="badge st-on_hold">{{ _('Dept. head') }}</span>{% endif %}{% if not u.active %} <span class="badge st-cancelled">{{ _('Deactivated') }}</span>{% endif %}</td>
+      <td data-label="{{ _('Role') }}"><span class="badge role-{{ u.role }}">{{ _(ROLES[u.role]) }}</span>{% if u.approver_title %} <span class="badge st-on_hold">{{ _(APPROVER_TITLES[u.approver_title]) }}</span>{% endif %}{% if not u.active %} <span class="badge st-cancelled">{{ _('Deactivated') }}</span>{% endif %}</td>
       <td data-label="{{ _('Last login') }}">{{ u.last_login|dt }}</td>
       <td class="actions">
         <a class="btn small" href="{{ url_for('admin_users', edit=u.id) }}">{{ _('Edit') }}</a>

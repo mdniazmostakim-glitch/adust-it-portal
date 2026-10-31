@@ -38,7 +38,7 @@ def q(sql, *a):
 admin = client(); login(admin, "it001", "adminpass1")
 # ---------- users: IT staff, department head, requesters
 post(admin, "/admin/users", {"name": "Rafiq Islam", "email": "rafiq@adust.edu.bd", "role": "it", "department": "IT Section", "phone": "01711000001", "password": "itstaff123"})
-post(admin, "/admin/users", {"name": "Dr. Head CSE", "email": "head@adust.edu.bd", "role": "user", "department": "Computer Science & Engineering (CSE)", "is_approver": "1", "password": "headpass1"})
+post(admin, "/admin/users", {"name": "Dr. Head CSE", "email": "head@adust.edu.bd", "role": "user", "department": "Computer Science & Engineering (CSE)", "approver_title": "chairman", "password": "headpass1"})
 post(admin, "/admin/users", {"name": "Admin Phone", "email": "itadmin@adust.edu.bd", "id": "1", "role": "admin", "phone": "01711000000", "department": "IT Section"})
 it = client(); login(it, "rafiq@adust.edu.bd", "itstaff123")
 head = client(); login(head, "head@adust.edu.bd", "headpass1")
@@ -141,6 +141,45 @@ assert head.post(f"/tickets/{tid}/update", data={"csrf_token": tok(head), "body"
 other = client(); post(other, "/register", {"name": "Other", "email": "o@adust.edu.bd", "department": "Law", "password": "secret123", "confirm": "secret123"}); approve("o@adust.edu.bd"); login(other, "o@adust.edu.bd", "secret123")
 assert other.get(f"/tickets/{tid}").status_code == 403 and other.get("/approvals").status_code == 403
 print("approval ok")
+
+# ---------- chairman first, coordinator when there is no chairman / chairman is overdue
+CSE, EEE = "Computer Science & Engineering (CSE)", "Electrical & Electronic Engineering (EEE)"
+post(admin, "/admin/users", {"name": "CSE Coordinator", "email": "coord@adust.edu.bd", "role": "user", "department": CSE, "approver_title": "coordinator", "password": "coordpass1"})
+post(admin, "/admin/users", {"name": "EEE Coordinator", "email": "eeecoord@adust.edu.bd", "role": "user", "department": EEE, "approver_title": "coordinator", "password": "coordpass1"})
+post(admin, "/admin/users", {"name": "EEE Teacher", "email": "eeeteacher@adust.edu.bd", "role": "user", "department": EEE, "password": "teacher123"})
+coord = client(); login(coord, "coord@adust.edu.bd", "coordpass1")
+eeec = client(); login(eeec, "eeecoord@adust.edu.bd", "coordpass1")
+eeet = client(); login(eeet, "eeeteacher@adust.edu.bd", "teacher123")
+def new_purchase(c, title):
+    post(c, "/tickets/new", {"title": title, "category_id": "13", "priority": "5", "description": "need"}, content_type="multipart/form-data")
+    return q("SELECT id FROM tickets WHERE title=?", title)[0][0]
+emails.clear()
+k1 = new_purchase(u, "New keyboard for CSE lab")                     # CSE has chairman + coordinator
+to = [e[0][0] for e in emails if "Approval needed" in e[1]]
+assert to == ["head@adust.edu.bd"], to                                 # only the chairman
+assert b"New keyboard" not in coord.get("/approvals").data
+assert coord.post(f"/tickets/{k1}/approve", data={"csrf_token": tok(coord), "decision": "approve"}).status_code == 403
+ok(u.get(f"/tickets/{k1}"), "Waiting for approval from", "Dr. Head CSE", "Chairman")
+with app.app_context():                                                # chairman does not respond in time
+    A.get_db().execute("UPDATE tickets SET created_at=? WHERE id=?", (A.now(timedelta(hours=-30)), k1)); A.get_db().commit()
+    A.housekeeping()
+    A.set_setting("last_backup", "")
+assert any(e[0] == ["coord@adust.edu.bd"] and "chairman has not responded" in e[1] for e in emails), emails
+ok(coord.get("/approvals"), "New keyboard")
+ok(post(coord, f"/tickets/{k1}/approve", {"decision": "approve"}), "approved and sent")
+ok(u.get(f"/tickets/{k1}"), "Approved by Coordinator, Computer Science &amp; Engineering (CSE)")
+emails.clear()
+k2 = new_purchase(eeet, "Projector lamp for EEE")                      # EEE has only a coordinator
+assert [e[0][0] for e in emails if "Approval needed" in e[1]] == ["eeecoord@adust.edu.bd"]
+ok(post(eeec, f"/tickets/{k2}/approve", {"decision": "approve"}), "approved and sent")
+k3 = new_purchase(coord, "Coordinator asks for a monitor")             # coordinator -> chairman approves
+assert q("SELECT status FROM tickets WHERE id=?", k3)[0][0] == "pending_approval"
+ok(post(head, f"/tickets/{k3}/approve", {"decision": "approve"}), "approved and sent")
+k4 = new_purchase(eeec, "EEE coordinator asks for a UPS")              # top approver of EEE -> no approval
+k5 = new_purchase(head, "Chairman asks for a printer")                 # chairman -> no approval
+assert [r[0] for r in q("SELECT status FROM tickets WHERE id IN (?, ?)", k4, k5)] == ["new", "new"]
+ok(admin.get("/admin/departments"), "Dr. Head CSE (Chairman)", "CSE Coordinator (Coordinator)")
+print("chairman/coordinator routing ok")
 
 # ---------- IT workflow, first response, rating
 t1 = q("SELECT id FROM tickets WHERE title='Lab PC not booting'")[0][0]

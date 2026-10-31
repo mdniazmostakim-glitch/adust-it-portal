@@ -14,7 +14,7 @@
     <label>{{ _('Designation') }} <input name="designation" value="{{ g.user.designation }}"></label>
     <label>{{ _('Language') }} <select name="lang"><option value="en" {{ 'selected' if g.user.lang == 'en' }}>English</option><option value="bn" {{ 'selected' if g.user.lang == 'bn' }}>বাংলা</option></select></label>
     <div class="span"><button class="btn primary">{{ _('Save profile') }}</button>
-      <span class="muted">{{ _('Role') }}: {{ _(ROLES[g.user.role]) }}{% if g.user.is_approver %} · {{ _('Department head (approver)') }}{% endif %}</span></div>
+      <span class="muted">{{ _('Role') }}: {{ _(ROLES[g.user.role]) }}{% if g.user.approver_title %} · {{ _(APPROVER_TITLES[g.user.approver_title]) }}, {{ g.user.department }}{% endif %}</span></div>
   </form>
   <p class="hint">{{ _('Your mobile number is used for SMS alerts on urgent work (IT staff).') }}</p>
 </div>

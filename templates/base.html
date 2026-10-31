@@ -46,7 +46,7 @@
   <div class="side-user">
     <a class="who" href="{{ url_for('profile') }}">
       <span class="avatar">{{ (g.user.name|first_name)[:1]|upper }}</span>
-      <span><strong>{{ g.user.name }}</strong><small>{{ _(ROLES[g.user.role]) }}{% if g.user.is_approver %} · {{ _('Dept. head') }}{% endif %}</small></span>
+      <span><strong>{{ g.user.name }}</strong><small>{{ _(ROLES[g.user.role]) }}{% if g.user.approver_title %} · {{ _(APPROVER_TITLES[g.user.approver_title]) }}{% endif %}</small></span>
     </a>
     <form method="post" action="{{ url_for('logout') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

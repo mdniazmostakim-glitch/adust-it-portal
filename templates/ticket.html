@@ -118,6 +118,7 @@
     <dt>{{ _('Category') }}</dt><dd>{{ t.category or '—' }}</dd>
     <dt>{{ _('Priority') }}</dt><dd>{{ prio(t) }}</dd>
     <dt>{{ _('Needed by') }}</dt><dd>{{ due(t) }}</dd>
+    {% if waiting_on %}<dt>{{ _('Waiting for approval from') }}</dt><dd>{% for w in waiting_on %}{{ w.name }} <small class="muted">({{ _(APPROVER_TITLES[w.approver_title]) if w.approver_title else _('IT admin') }})</small>{% if not loop.last %}<br>{% endif %}{% endfor %}</dd>{% endif %}
     <dt>{{ _('Assigned to') }}</dt><dd>{{ t.assignee_name or _('IT Section (not yet assigned)') }}</dd>
     <dt>{{ _('Requested by') }}</dt><dd>{{ t.requester_name }}<br><small class="muted">{{ t.requester_dept }}</small>
       {% if is_it() and t.requester_phone %}<br><small>📞 <a href="tel:{{ t.requester_phone }}">{{ t.requester_phone }}</a></small>{% endif %}</dd>
