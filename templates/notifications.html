@@ -5,7 +5,7 @@
 </div>
 <div class="card">
   {% for n in notes %}
-  <a class="note {{ 'unread' if not n.is_read }}" href="{{ url_for('ticket_detail', ticket_id=n.ticket_id) if n.ticket_id else '#' }}">
+  <a class="note {{ 'unread' if not n.is_read }}" href="{{ url_for('ticket_detail', ticket_id=n.ticket_id) if n.ticket_id else (url_for('admin_users') if is_admin() else '#') }}">
     <span>{% if n.code %}<span class="code">{{ n.code }}</span> {% endif %}{{ n.message }}</span>
     <small class="muted">{{ n.created_at|dt }}</small>
   </a>

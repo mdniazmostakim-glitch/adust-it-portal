@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
     lang TEXT NOT NULL DEFAULT 'en',
     password_hash TEXT,
     active INTEGER NOT NULL DEFAULT 1,
+    approved INTEGER NOT NULL DEFAULT 1,         -- 0 = self-registered, waiting for an admin to verify
     created_at TEXT NOT NULL,
     last_login TEXT
 );

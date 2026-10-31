@@ -472,6 +472,17 @@ BN = {
     "Dept. head": "বিভাগীয় প্রধান",
     "Deactivated": "নিষ্ক্রিয়",
     "Deactivate": "নিষ্ক্রিয় করুন",
+    "New accounts waiting for verification": "যাচাইয়ের অপেক্ষায় থাকা নতুন অ্যাকাউন্ট",
+    "Check that each person really is ADUST staff (name, department, designation, email) before approving.": "অনুমোদনের আগে যাচাই করুন যে ব্যক্তি সত্যিই ADUST-এর স্টাফ (নাম, বিভাগ, পদবি, ইমেইল)।",
+    "Registered": "নিবন্ধনের সময়",
+    "After you register, the IT section checks that you are ADUST staff. You can sign in once your account is approved.": "নিবন্ধনের পর আইটি সেকশন যাচাই করবে আপনি ADUST-এর স্টাফ কিনা। অ্যাকাউন্ট অনুমোদন হলে সাইন ইন করতে পারবেন।",
+    "Reject and remove this account request?": "এই অ্যাকাউন্টের অনুরোধ বাতিল করে মুছে ফেলবেন?",
+    "{name} can now sign in.": "{name} এখন সাইন ইন করতে পারবেন।",
+    "Account request from {name} was rejected and removed.": "{name}-এর অ্যাকাউন্টের অনুরোধ বাতিল করে মুছে ফেলা হয়েছে।",
+    "{n} new account(s) waiting for verification": "{n}টি নতুন অ্যাকাউন্ট যাচাইয়ের অপেক্ষায়",
+    "New accounts must be verified by an IT admin before they can sign in": "নতুন অ্যাকাউন্ট আইটি অ্যাডমিন যাচাই না করা পর্যন্ত সাইন ইন করা যাবে না",
+    "Your account is waiting for verification by the IT section. You will get an email when it is approved.": "আপনার অ্যাকাউন্টটি আইটি সেকশনের যাচাইয়ের অপেক্ষায় আছে। অনুমোদন হলে ইমেইলে জানানো হবে।",
+    "Account created. The IT section will verify that you are ADUST staff; you will get an email when you can sign in.": "অ্যাকাউন্ট তৈরি হয়েছে। আপনি ADUST-এর স্টাফ কিনা আইটি সেকশন যাচাই করবে; সাইন ইন করা গেলে ইমেইলে জানানো হবে।",
     "Activate": "সক্রিয় করুন",
 
     # ---- Messages (flash)

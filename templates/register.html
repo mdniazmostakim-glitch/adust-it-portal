@@ -4,6 +4,7 @@
   {% include "_auth_head.html" %}
   <h1 class="center">{{ _('Create an account') }}</h1>
   <p class="muted center">{{ _('Use any email address you check regularly; updates about your requests are sent there.') }}</p>
+  <div class="flash warn">{{ _('After you register, the IT section checks that you are ADUST staff. You can sign in once your account is approved.') }}</div>
   <form method="post" class="grid">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label>{{ _('Full name') }} * <input name="name" required value="{{ request.form.name }}"></label>

@@ -22,6 +22,7 @@
         <option value="left" {{ 'selected' if values.sidebar_side == 'left' }}>{{ _('Left side') }}</option>
         <option value="right" {{ 'selected' if values.sidebar_side == 'right' }}>{{ _('Right side') }}</option>
       </select></label>
+    <label class="check"><input type="checkbox" name="require_account_approval" value="1" {{ 'checked' if values.require_account_approval == '1' }}> {{ _('New accounts must be verified by an IT admin before they can sign in') }}</label>
     <label class="check"><input type="checkbox" name="sms_urgent" value="1" {{ 'checked' if values.sms_urgent == '1' }}> {{ _('Send SMS to IT staff for urgent requests and escalations') }}</label>
     <button class="btn primary">{{ _('Save settings') }}</button>
   </form>

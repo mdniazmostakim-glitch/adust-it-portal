@@ -34,7 +34,7 @@
     {% endif %}
     {% if is_admin() %}
     <div class="nav-label">{{ _('Administration') }}</div>
-    {{ nav('admin_users', _('Users'), 'users') }}
+    {{ nav('admin_users', _('Users'), 'users', badge=pending_accounts_count()) }}
     {{ nav('admin_departments', _('Departments'), 'building') }}
     {{ nav('admin_categories', _('Categories'), 'tag') }}
     {{ nav('admin_recurring', _('Recurring maintenance'), 'repeat') }}

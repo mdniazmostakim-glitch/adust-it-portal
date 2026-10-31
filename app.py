@@ -104,6 +104,7 @@ DEFAULT_SETTINGS = {
     "backup_keep_days": "14",
     "sms_urgent": "1",
     "sidebar_side": "left",         # menu position: left or right
+    "require_account_approval": "1",  # self-registered accounts must be verified by an admin
     "hk_last": "",
     "last_backup": "",
     "last_backup_copy": "",
@@ -175,6 +176,7 @@ def init_db():
     with open(os.path.join(BASE_DIR, "schema.sql")) as f:
         db.executescript(f.read())
     db.execute("PRAGMA journal_mode = WAL")
+    migrate(db)
     if db.execute("SELECT COUNT(*) FROM categories").fetchone()[0] == 0:
         db.executemany("INSERT INTO categories (name, needs_approval) VALUES (?, ?)", DEFAULT_CATEGORIES)
     if db.execute("SELECT COUNT(*) FROM departments").fetchone()[0] == 0:
@@ -183,6 +185,20 @@ def init_db():
     db.commit()
     for folder in ("UPLOAD_FOLDER", "BACKUP_FOLDER"):
         os.makedirs(app.config[folder], exist_ok=True)
+
+
+# Columns added after the first release: (table, column, definition).
+# Existing databases get them on start-up; existing rows take the default.
+MIGRATIONS = [
+    ("users", "approved", "INTEGER NOT NULL DEFAULT 1"),
+]
+
+
+def migrate(db):
+    for table, column, definition in MIGRATIONS:
+        cols = {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
+        if column not in cols:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def get_setting(key):
@@ -309,7 +325,8 @@ def load_user():
     g.user = None
     uid = session.get("user_id")
     if uid is not None:
-        g.user = get_db().execute("SELECT * FROM users WHERE id = ? AND active = 1", (uid,)).fetchone()
+        g.user = get_db().execute("SELECT * FROM users WHERE id = ? AND active = 1 AND approved = 1",
+                                  (uid,)).fetchone()
         if g.user is None:
             session.clear()
         elif "lang" not in session:
@@ -395,6 +412,7 @@ app.jinja_env.globals.update(
     active_announcements=active_announcements, departments=departments,
     now_year=lambda: date.today().year, today=lambda: date.today().isoformat(),
     sidebar_side=lambda: get_setting("sidebar_side"),
+    pending_accounts_count=lambda: pending_accounts_count(),
 )
 
 
@@ -644,6 +662,25 @@ def notify(user_ids, ticket, message, sms=False):
         send_sms([p["phone"] for p in people], f"ADUST IT {ticket['code']}: {message}"[:300])
 
 
+def notify_admins_new_account(name, email, department, designation):
+    """Tell IT admins that a self-registered account is waiting for verification."""
+    db = get_db()
+    admins = db.execute("SELECT id, email FROM users WHERE role = 'admin' AND active = 1 AND approved = 1").fetchall()
+    message = f"New account to verify: {name} ({designation or 'no designation'}, {department}) — {email}"
+    db.executemany("INSERT INTO notifications (user_id, ticket_id, message, created_at) VALUES (?, NULL, ?, ?)",
+                   [(a["id"], message, now()) for a in admins])
+    db.commit()
+    base = app.config["BASE_URL"] or (request.host_url.rstrip("/") if has_request_context() else "")
+    send_email([a["email"] for a in admins], "[ADUST IT Portal] New account waiting for verification",
+               f"{message}\n\nVerify or reject it here: {base}/admin/users?status=pending\n\n— ADUST IT Section Portal")
+
+
+def pending_accounts_count():
+    if not is_admin():
+        return 0
+    return get_db().execute("SELECT COUNT(*) FROM users WHERE approved = 0").fetchone()[0]
+
+
 def it_team_ids(admins_only=False):
     roles = ("admin",) if admins_only else ("it", "admin")
     marks = ",".join("?" * len(roles))
@@ -756,6 +793,8 @@ def login():
         if not ok:
             record_failure(ident)
             flash(_("Incorrect email / user ID or password."), "error")
+        elif not user["approved"]:
+            flash(_("Your account is waiting for verification by the IT section. You will get an email when it is approved."), "error")
         elif not user["active"]:
             flash(_("Your account is deactivated. Please contact the IT section."), "error")
         else:
@@ -802,14 +841,21 @@ def register():
         if error is None:
             try:
                 db = get_db()
+                needs_check = get_setting("require_account_approval") == "1"
                 db.execute(
                     "INSERT INTO users (login_id, name, email, phone, department, designation, role, lang, "
-                    "password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, 'user', ?, ?, ?)",
+                    "password_hash, approved, created_at) VALUES (?, ?, ?, ?, ?, ?, 'user', ?, ?, ?, ?)",
                     (login_id, form["name"].strip(), email, form.get("phone", "").strip(),
                      form["department"].strip(), form.get("designation", "").strip(), g.lang,
-                     generate_password_hash(form["password"]), now()))
+                     generate_password_hash(form["password"]), 0 if needs_check else 1, now()))
                 db.commit()
-                flash(_("Account created. Please sign in."), "success")
+                if needs_check:
+                    notify_admins_new_account(form["name"].strip(), email, form["department"].strip(),
+                                              form.get("designation", "").strip())
+                    flash(_("Account created. The IT section will verify that you are ADUST staff; "
+                            "you will get an email when you can sign in."), "success")
+                else:
+                    flash(_("Account created. Please sign in."), "success")
                 return redirect(url_for("login"))
             except sqlite3.IntegrityError:
                 error = _("An account with that email or user ID already exists.")
@@ -1851,9 +1897,38 @@ def admin_users():
     if request.args.get("q", "").strip():
         where = "(name LIKE ? OR email LIKE ? OR login_id LIKE ? OR department LIKE ?)"
         args = [f"%{request.args['q'].strip()}%"] * 4
-    users = db.execute(f"SELECT * FROM users WHERE {where} ORDER BY CASE role WHEN 'admin' THEN 0 "
+    users = db.execute(f"SELECT * FROM users WHERE {where} AND approved = 1 ORDER BY CASE role WHEN 'admin' THEN 0 "
                        f"WHEN 'it' THEN 1 ELSE 2 END, name", args).fetchall()
-    return render_template("admin/users.html", users=users, edit=edit)
+    pending = db.execute("SELECT * FROM users WHERE approved = 0 ORDER BY created_at").fetchall()
+    return render_template("admin/users.html", users=users, edit=edit, pending=pending)
+
+
+@app.route("/admin/users/<int:user_id>/verify", methods=["POST"])
+@admin_required
+def admin_verify_user(user_id):
+    """Approve or reject a self-registered account."""
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ? AND approved = 0", (user_id,)).fetchone()
+    if user is None:
+        abort(404)
+    if request.form.get("decision") == "approve":
+        role = request.form.get("role") if request.form.get("role") in ROLES else "user"
+        db.execute("UPDATE users SET approved = 1, role = ?, is_approver = ? WHERE id = ?",
+                   (role, 1 if request.form.get("is_approver") else 0, user_id))
+        db.commit()
+        base = app.config["BASE_URL"] or request.host_url.rstrip("/")
+        send_email([user["email"]], "ADUST IT Portal — your account is approved",
+                   f"Hello {user['name']},\n\nYour account on the ADUST IT Service Request Portal has been "
+                   f"verified. You can now sign in:\n{base}/login\n\n— ADUST IT Section")
+        flash(_("{name} can now sign in.", name=user["name"]), "success")
+    elif request.form.get("decision") == "reject":
+        # A rejected sign-up has no requests yet, so the account is simply removed.
+        db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        db.commit()
+        flash(_("Account request from {name} was rejected and removed.", name=user["name"]), "success")
+    else:
+        abort(400)
+    return redirect(url_for("admin_users"))
 
 
 @app.route("/admin/users/<int:user_id>/toggle", methods=["POST"])
@@ -2137,6 +2212,7 @@ def admin_settings():
                 if f.get(key, "").isdigit():
                     set_setting(key, int(f[key]))
             set_setting("sms_urgent", "1" if f.get("sms_urgent") else "0")
+            set_setting("require_account_approval", "1" if f.get("require_account_approval") else "0")
             if f.get("sidebar_side") in ("left", "right"):
                 set_setting("sidebar_side", f["sidebar_side"])
             flash(_("Settings saved."), "success")

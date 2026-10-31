@@ -1,6 +1,37 @@
 {% extends "base.html" %}{% from "_macros.html" import dept_select %}{% block title %}{{ _('Users') }}{% endblock %}
 {% block content %}
 <h1>{{ _('Users') }}</h1>
+{% if pending %}
+<div class="card approve-card">
+  <h2>👤 {{ _('New accounts waiting for verification') }} ({{ pending|length }})</h2>
+  <p class="muted">{{ _('Check that each person really is ADUST staff (name, department, designation, email) before approving.') }}</p>
+  <table>
+    <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Email / User ID') }}</th><th>{{ _('Department') }}</th><th>{{ _('Mobile') }}</th><th>{{ _('Registered') }}</th><th></th></tr></thead>
+    <tbody>
+    {% for u in pending %}
+    <tr>
+      <td data-label="{{ _('Name') }}"><strong>{{ u.name }}</strong><br><small class="muted">{{ u.designation or '—' }}</small></td>
+      <td data-label="{{ _('Email') }}">{{ u.email }}<br><small class="muted">{{ u.login_id or '' }}</small></td>
+      <td data-label="{{ _('Department') }}">{{ u.department }}</td>
+      <td data-label="{{ _('Mobile') }}">{% if u.phone %}<a href="tel:{{ u.phone }}">{{ u.phone }}</a>{% else %}—{% endif %}</td>
+      <td data-label="{{ _('Registered') }}">{{ u.created_at|dt }}</td>
+      <td>
+        <form method="post" action="{{ url_for('admin_verify_user', user_id=u.id) }}" class="verify-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <select name="role" aria-label="{{ _('Role') }}">{% for k, v in ROLES.items() %}<option value="{{ k }}">{{ _(v) }}</option>{% endfor %}</select>
+          <label class="check"><input type="checkbox" name="is_approver" value="1"> {{ _('Dept. head') }}</label>
+          <div class="actions">
+            <button class="btn small primary" name="decision" value="approve">✓ {{ _('Approve') }}</button>
+            <button class="btn small danger" name="decision" value="reject" onclick="return confirm('{{ _('Reject and remove this account request?') }}')">✕ {{ _('Reject') }}</button>
+          </div>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 <div class="card">
   <h2>{{ _('Edit {name}', name=edit.name) if edit else _('Add a user') }}</h2>
   <form method="post" class="grid">

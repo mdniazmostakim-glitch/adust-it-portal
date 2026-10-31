@@ -5,6 +5,10 @@
   <h1>{{ _('IT Section dashboard') if is_it() else _('Welcome, {name}', name=g.user.name|first_name) }}</h1>
   <a class="btn primary" href="{{ url_for('new_ticket') }}">+ {{ _('New request') }}</a>
 </div>
+{% set pa = pending_accounts_count() %}
+{% if pa %}
+<a class="flash warn block-link" href="{{ url_for('admin_users') }}">👤 {{ _('{n} new account(s) waiting for verification', n=pa) }} →</a>
+{% endif %}
 {% if approvals %}
 <a class="flash warn block-link" href="{{ url_for('approvals') }}">✍ {{ _('{n} request(s) waiting for your approval', n=approvals) }} →</a>
 {% endif %}

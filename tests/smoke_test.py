@@ -43,12 +43,32 @@ post(admin, "/admin/users", {"name": "Admin Phone", "email": "itadmin@adust.edu.
 it = client(); login(it, "rafiq@adust.edu.bd", "itstaff123")
 head = client(); login(head, "head@adust.edu.bd", "headpass1")
 u = client()
-ok(post(u, "/register", {"name": "Mim Akter", "email": "mim@adust.edu.bd", "department": "Computer Science & Engineering (CSE)", "phone": "01811000000", "password": "secret123", "confirm": "secret123"}), "Account created")
+ok(post(u, "/register", {"name": "Mim Akter", "email": "mim@adust.edu.bd", "department": "Computer Science & Engineering (CSE)", "phone": "01811000000", "password": "secret123", "confirm": "secret123"}), "will verify")
+
+# ---------- new accounts wait for admin verification
+def uid(email): return q("SELECT id FROM users WHERE email=?", email)[0][0]
+def approve(email, **extra):
+    return post(admin, f"/admin/users/{uid(email)}/verify", {"decision": "approve", "role": "user", **extra})
+ok(login(u, "mim@adust.edu.bd", "secret123"), "waiting for verification")
+assert u.get("/").status_code == 302                                     # still signed out
+ok(admin.get("/"), "1 new account(s) waiting for verification")
+ok(admin.get("/admin/users"), "New accounts waiting for verification", "Mim Akter")
+ok(admin.get("/notifications"), "New account to verify: Mim Akter")
+assert any(e[0] == ["itadmin@adust.edu.bd"] and "verification" in e[1] for e in emails), emails
+emails.clear()
+ok(approve("mim@adust.edu.bd"), "Mim Akter can now sign in")
+assert any(e[0] == ["mim@adust.edu.bd"] and "approved" in e[1] for e in emails), emails
+bad = client(); post(bad, "/register", {"name": "Fake Person", "email": "fake@gmail.com", "department": "Library", "password": "secret123", "confirm": "secret123"})
+ok(post(admin, f"/admin/users/{uid('fake@gmail.com')}/verify", {"decision": "reject"}), "rejected and removed")
+assert not q("SELECT 1 FROM users WHERE email='fake@gmail.com'")
+assert it.post(f"/admin/users/1/verify", data={"csrf_token": tok(it), "decision": "approve"}).status_code == 403
+print("account verification ok")
 ok(login(u, "mim@adust.edu.bd", "secret123"), "Welcome, Mim")
 
 # ---------- any email (personal or institutional) can register and sign in
 g = client()
 ok(post(g, "/register", {"name": "Personal Mail", "email": "someone.personal@gmail.com", "department": "Library", "password": "secret123", "confirm": "secret123"}), "Account created")
+approve("someone.personal@gmail.com")
 ok(login(g, "someone.personal@gmail.com", "secret123"), "Welcome, Personal")
 ok(post(client(), "/register", {"name": "Bad", "email": "not-an-email", "department": "Library", "password": "secret123", "confirm": "secret123"}), "valid email")
 app.config["ALLOWED_EMAIL_DOMAINS"] = ["adust.edu.bd"]
@@ -118,7 +138,7 @@ ok(post(head, f"/tickets/{tid}/approve", {"decision": "reject"}), "reason for re
 ok(post(head, f"/tickets/{tid}/approve", {"decision": "approve", "comment": "OK, budget available"}), "approved and sent")
 assert q("SELECT status, approved_by FROM tickets WHERE id=?", tid)[0][:] == ("new", 3)
 assert head.post(f"/tickets/{tid}/update", data={"csrf_token": tok(head), "body": "hi"}).status_code == 403
-other = client(); post(other, "/register", {"name": "Other", "email": "o@adust.edu.bd", "department": "Law", "password": "secret123", "confirm": "secret123"}); login(other, "o@adust.edu.bd", "secret123")
+other = client(); post(other, "/register", {"name": "Other", "email": "o@adust.edu.bd", "department": "Law", "password": "secret123", "confirm": "secret123"}); approve("o@adust.edu.bd"); login(other, "o@adust.edu.bd", "secret123")
 assert other.get(f"/tickets/{tid}").status_code == 403 and other.get("/approvals").status_code == 403
 print("approval ok")
 

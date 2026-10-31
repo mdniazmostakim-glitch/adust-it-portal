@@ -229,6 +229,9 @@ a.stat:hover { border-color: var(--accent-border); transform: translateY(-1px); 
 .timeline .body { white-space: pre-wrap; margin-top: 4px; }
 .file-inline { margin: 0 0 12px; }
 .approve-card { border-color: #f3c27a; background: #fffbf3; }
+.verify-form { display: grid; gap: 6px; min-width: 190px; }
+.verify-form select { margin: 0 !important; padding: 6px 8px !important; font-size: .85rem !important; }
+.verify-form .check { margin: 0; font-size: .85rem; }
 .rating-input { display: inline-flex; flex-direction: row-reverse; gap: 4px; margin: 4px 0 12px; }
 .rating-input input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .rating-input label { font-size: 2rem; color: #d7dbe3; cursor: pointer; margin: 0; line-height: 1; }
