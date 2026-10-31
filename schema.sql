@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS users (
     designation TEXT NOT NULL DEFAULT '',
     role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'it', 'admin')),
     is_approver INTEGER NOT NULL DEFAULT 0,      -- 1 when approver_title is set (kept for quick checks)
-    approver_title TEXT NOT NULL DEFAULT '',     -- '', 'chairman', 'head' (head of office) or 'coordinator'
+    approver_title TEXT NOT NULL DEFAULT '',
+    signature_stored TEXT,                       -- uploaded signature image, used on approvals and job cards     -- '', 'chairman', 'head' (head of office) or 'coordinator'
     lang TEXT NOT NULL DEFAULT 'en',
     password_hash TEXT,
     active INTEGER NOT NULL DEFAULT 1,
@@ -27,7 +28,8 @@ CREATE TABLE IF NOT EXISTS departments (
 CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
-    needs_approval INTEGER NOT NULL DEFAULT 0,  -- requests go to the department head first
+    needs_approval INTEGER NOT NULL DEFAULT 0,  -- requests go to the department chairman first
+    needs_registrar INTEGER NOT NULL DEFAULT 0, -- new purchases: the Registrar gives final approval
     active INTEGER NOT NULL DEFAULT 1
 );
 
@@ -86,6 +88,7 @@ CREATE TABLE IF NOT EXISTS tickets (
     recurring_id INTEGER REFERENCES recurring_tasks(id) ON DELETE SET NULL,
     attachment_name TEXT,
     attachment_stored TEXT,
+    approval_stage TEXT,                         -- while pending_approval: 'department' or 'registrar'
     approved_by INTEGER REFERENCES users(id),
     approved_at TEXT,
     rating INTEGER CHECK (rating BETWEEN 1 AND 5),
@@ -107,6 +110,22 @@ CREATE TABLE IF NOT EXISTS ticket_updates (
     body TEXT NOT NULL DEFAULT '',
     event TEXT NOT NULL DEFAULT '',
     internal INTEGER NOT NULL DEFAULT 0,
+    attachment_name TEXT,
+    attachment_stored TEXT,
+    created_at TEXT NOT NULL
+);
+
+-- Every approval decision, with the approver's title and signature at that moment.
+CREATE TABLE IF NOT EXISTS approvals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    stage TEXT NOT NULL,                         -- 'department' or 'registrar'
+    user_id INTEGER REFERENCES users(id),
+    approver_name TEXT NOT NULL,
+    approver_title TEXT NOT NULL DEFAULT '',
+    decision TEXT NOT NULL CHECK (decision IN ('approved', 'rejected')),
+    comment TEXT NOT NULL DEFAULT '',
+    signature_stored TEXT,
     attachment_name TEXT,
     attachment_stored TEXT,
     created_at TEXT NOT NULL

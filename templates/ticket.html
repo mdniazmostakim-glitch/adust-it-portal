@@ -8,7 +8,7 @@
 <div class="ticket-layout">
 <div>
   <div class="card">
-    <div class="row-between"><span class="code big">{{ t.code }}</span>{{ status(t.status) }}</div>
+    <div class="row-between"><span class="code big">{{ t.code }}</span><span>{{ status(t.status) }}{% if t.status == 'pending_approval' and t.approval_stage %} <small class="muted">· {{ _(STAGES[t.approval_stage]) }}</small>{% endif %}</span></div>
     <h1>{{ t.title }}</h1>
     <div class="desc">{{ t.description or _('No description.') }}</div>
     {% if t.remarks %}<p class="remarks"><strong>{{ _('Remarks') }}:</strong> {{ t.remarks }}</p>{% endif %}
@@ -17,11 +17,19 @@
 
   {% if can_approve %}
   <div class="card approve-card">
+    {% if t.approval_stage == 'registrar' %}
+    <h2>✍ {{ _('Registrar approval needed (new purchase)') }}</h2>
+    <p class="muted">{{ _('The department has approved this purchase. Your approval sends it to the IT section.') }}</p>
+    {% else %}
     <h2>✍ {{ _('Your approval is needed') }}</h2>
     <p class="muted">{{ _('{name} from your department asked for this work. Approve it to send it to the IT section.', name=t.requester_name) }}</p>
-    <form method="post" action="{{ url_for('ticket_approve', ticket_id=t.id) }}">
+    {% endif %}
+    <form method="post" action="{{ url_for('ticket_approve', ticket_id=t.id) }}" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label>{{ _('Comment (required when rejecting)') }} <textarea name="comment" rows="2"></textarea></label>
+      <label>{{ _('Signed approval / demand letter (optional scan or PDF)') }} <input type="file" name="file"></label>
+      <p class="hint">{% if g.user.signature_stored %}✓ {{ _('Your saved signature will be added to this approval and the printed job card.') }}
+        {% else %}{{ _('Tip: upload your signature in My profile so it appears on approvals and printed job cards.') }} <a href="{{ url_for('profile') }}">{{ _('My profile') }}</a>{% endif %}</p>
       <div class="actions">
         <button class="btn primary" name="decision" value="approve">✓ {{ _('Approve') }}</button>
         <button class="btn danger" name="decision" value="reject">✕ {{ _('Reject') }}</button>
@@ -36,7 +44,7 @@
     {% for u in updates %}
       <li class="{{ 'internal' if u.internal }} {{ 'from-it' if u.user_role in ('it', 'admin') }} {{ 'system' if u.user_role == 'system' }}">
         <div class="meta"><strong>{{ _('System') if u.user_role == 'system' else u.user_name }}</strong>
-          <span class="muted">· {{ _('IT') if u.user_role in ('it', 'admin') else (_('Automatic') if u.user_role == 'system' else _('Requester')) }} · {{ u.created_at|dt }}</span>
+          <span class="muted">· {{ _('IT') if u.user_role in ('it', 'admin') else (_('Automatic') if u.user_role == 'system' else (_(approver_short(u.user_title)) if u.user_title and not u.is_requester else _('Requester'))) }} · {{ u.created_at|dt }}</span>
           {% if u.internal %}<span class="badge st-on_hold">{{ _('Internal note') }}</span>{% endif %}</div>
         {% if u.event %}<div class="event">{{ u.event }}</div>{% endif %}
         {% if u.body %}<div class="body">{{ u.body }}</div>{% endif %}
@@ -118,13 +126,22 @@
     <dt>{{ _('Category') }}</dt><dd>{{ t.category or '—' }}</dd>
     <dt>{{ _('Priority') }}</dt><dd>{{ prio(t) }}</dd>
     <dt>{{ _('Needed by') }}</dt><dd>{{ due(t) }}</dd>
-    {% if waiting_on %}<dt>{{ _('Waiting for approval from') }}</dt><dd>{% for w in waiting_on %}{{ w.name }} <small class="muted">({{ _(APPROVER_TITLES[w.approver_title]) if w.approver_title else _('IT admin') }})</small>{% if not loop.last %}<br>{% endif %}{% endfor %}</dd>{% endif %}
+    {% if waiting_on %}<dt>{{ _('Waiting for approval from') }}</dt><dd>{% for w in waiting_on %}{{ w.name }} <small class="muted">({{ _(approver_short(w.approver_title)) if w.approver_title else _('IT admin') }})</small>{% if not loop.last %}<br>{% endif %}{% endfor %}</dd>{% endif %}
     <dt>{{ _('Assigned to') }}</dt><dd>{{ t.assignee_name or _('IT Section (not yet assigned)') }}</dd>
     <dt>{{ _('Requested by') }}</dt><dd>{{ t.requester_name }}<br><small class="muted">{{ t.requester_dept }}</small>
       {% if is_it() and t.requester_phone %}<br><small>📞 <a href="tel:{{ t.requester_phone }}">{{ t.requester_phone }}</a></small>{% endif %}</dd>
     {% if t.location %}<dt>{{ _('Location') }}</dt><dd>{{ t.location }}</dd>{% endif %}
     {% if t.asset_tag %}<dt>{{ _('Device') }}</dt><dd>{% if is_it() %}<a href="{{ url_for('asset_detail', asset_id=t.asset_id) }}">{{ t.asset_tag }}</a>{% else %}{{ t.asset_tag }}{% endif %}<br><small class="muted">{{ t.asset_type }} {{ t.asset_name }}</small></dd>{% endif %}
-    {% if t.approver_name %}<dt>{{ _('Approval') }}</dt><dd>{{ t.approver_name }}<br><small class="muted">{{ t.approved_at|dt }}</small></dd>{% endif %}
+    {% if t.status == 'pending_approval' and t.approval_stage %}<dt>{{ _('Approval stage') }}</dt><dd>{{ _(STAGES[t.approval_stage]) }}</dd>{% endif %}
+    {% if approvals %}<dt>{{ _('Approvals') }}</dt>
+    <dd class="approval-list">{% for a in approvals %}
+      <div class="approval-item {{ a.decision }}">
+        <strong>{{ '✓' if a.decision == 'approved' else '✕' }} {{ a.approver_name }}</strong><br>
+        <small class="muted">{{ a.approver_title }} · {{ a.created_at|dt }}</small>
+        {% if a.comment %}<br><small>“{{ a.comment }}”</small>{% endif %}
+        {% if a.signature_stored %}<img class="sig" src="{{ url_for('approval_signature', approval_id=a.id) }}" alt="{{ _('Signature') }}">{% endif %}
+        {% if a.attachment_name %}<br><small>📎 <a href="{{ url_for('approval_file', approval_id=a.id) }}">{{ a.attachment_name }}</a></small>{% endif %}
+      </div>{% endfor %}</dd>{% endif %}
     <dt>{{ _('Submitted') }}</dt><dd>{{ t.created_at|dt }}</dd>
     {% if t.first_response_at %}<dt>{{ _('First IT response') }}</dt><dd>{{ t.first_response_at|dt }}</dd>{% endif %}
     <dt>{{ _('Last update') }}</dt><dd>{{ t.updated_at|dt }}</dd>

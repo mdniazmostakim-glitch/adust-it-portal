@@ -6,20 +6,23 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input name="name" required placeholder="{{ _('New category name') }}">
     <label class="check"><input type="checkbox" name="needs_approval" value="1"> {{ _('Needs department head approval') }}</label>
+    <label class="check"><input type="checkbox" name="needs_registrar" value="1"> {{ _('New purchase: Registrar approval') }}</label>
     <button class="btn primary">{{ _('Add category') }}</button>
   </form>
 </div>
 <div class="card">
   <table>
-    <thead><tr><th>{{ _('Category') }}</th><th>{{ _('Requests') }}</th><th>{{ _('Approval') }}</th><th>{{ _('Status') }}</th><th></th></tr></thead>
+    <thead><tr><th>{{ _('Category') }}</th><th>{{ _('Requests') }}</th><th>{{ _('Approval') }}</th><th>{{ _('Registrar') }}</th><th>{{ _('Status') }}</th><th></th></tr></thead>
     <tbody>
     {% for c in categories %}
     <tr class="{{ '' if c.active else 'inactive' }}">
       <td data-label="{{ _('Category') }}">{{ c.name }}</td><td data-label="{{ _('Requests') }}">{{ c.n }}</td>
       <td data-label="{{ _('Approval') }}">{% if c.needs_approval %}<span class="badge st-on_hold">{{ _('Dept. head approval') }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td data-label="{{ _('Registrar') }}">{% if c.needs_registrar %}<span class="badge st-pending_approval">{{ _('Registrar approval') }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
       <td data-label="{{ _('Status') }}">{{ _('Active') if c.active else _('Hidden') }}</td>
       <td class="actions"><form method="post" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn small" name="approval" value="{{ c.id }}">{{ _('No approval') if c.needs_approval else _('Require approval') }}</button>
+        <button class="btn small" name="registrar" value="{{ c.id }}">{{ _('No Registrar step') if c.needs_registrar else _('Add Registrar step') }}</button>
         <button class="btn small" name="toggle" value="{{ c.id }}">{{ _('Hide') if c.active else _('Show') }}</button></form></td>
     </tr>
     {% endfor %}

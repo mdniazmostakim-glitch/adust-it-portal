@@ -20,6 +20,19 @@
   </table>
   <h2>{{ _('Description') }}</h2>
   <div class="box">{{ t.description or '—' }}{% if t.remarks %}<br><br><strong>{{ _('Remarks') }}:</strong> {{ t.remarks }}{% endif %}</div>
+  {% if approvals %}
+  <h2>{{ _('Approvals') }}</h2>
+  <table class="log approvals">
+    <tr><th>{{ _('Stage') }}</th><th>{{ _('Name & title') }}</th><th>{{ _('Decision') }}</th><th>{{ _('Date') }}</th><th>{{ _('Signature') }}</th></tr>
+    {% for a in approvals %}
+    <tr><td>{{ _(STAGES[a.stage]) }}</td>
+      <td><strong>{{ a.approver_name }}</strong><br>{{ a.approver_title }}{% if a.comment %}<br><em>“{{ a.comment }}”</em>{% endif %}{% if a.attachment_name %}<br>📎 {{ a.attachment_name }}{% endif %}</td>
+      <td>{{ _('Approved') if a.decision == 'approved' else _('Rejected') }}</td>
+      <td class="nowrap">{{ a.created_at|dt }}</td>
+      <td class="sig-cell">{% if a.signature_stored %}<img src="{{ url_for('approval_signature', approval_id=a.id) }}" alt="">{% else %}<span class="sig-line"></span>{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
   {% set notes = updates|selectattr('body')|list %}
   {% if notes %}
   <h2>{{ _('Updates') }}</h2>

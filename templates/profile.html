@@ -1,4 +1,18 @@
-{% extends "base.html" %}{% from "_macros.html" import dept_select %}{% block title %}{{ _('My profile') }}{% endblock %}
+{% extends "base.html" %}{% from "_macros.html" import dept_select %}{% block title %}{{ _('My profile') }}{% if g.user.approver_title or is_it() %}
+<div class="card">
+  <h2>{{ _('My signature') }}</h2>
+  <p class="muted">{{ _('Upload a clear photo or scan of your signature (PNG/JPG, ideally on white paper). It is added to your approvals and to printed job cards.') }}</p>
+  {% if g.user.signature_stored %}<p><img class="sig big" src="{{ url_for('my_signature') }}" alt="{{ _('Signature') }}"></p>{% endif %}
+  <form method="post" enctype="multipart/form-data" class="filters">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="signature">
+    <input type="file" name="signature" accept="image/png,image/jpeg,image/webp">
+    <button class="btn primary">{{ _('Save signature') }}</button>
+    {% if g.user.signature_stored %}<button class="btn danger" name="remove" value="1" formnovalidate>{{ _('Remove') }}</button>{% endif %}
+  </form>
+</div>
+{% endif %}
+{% endblock %}
 {% block content %}
 <h1>{{ _('My profile') }}</h1>
 <div class="cols">
@@ -31,4 +45,18 @@
   </form>
 </div>
 </div>
+{% if g.user.approver_title or is_it() %}
+<div class="card">
+  <h2>{{ _('My signature') }}</h2>
+  <p class="muted">{{ _('Upload a clear photo or scan of your signature (PNG/JPG, ideally on white paper). It is added to your approvals and to printed job cards.') }}</p>
+  {% if g.user.signature_stored %}<p><img class="sig big" src="{{ url_for('my_signature') }}" alt="{{ _('Signature') }}"></p>{% endif %}
+  <form method="post" enctype="multipart/form-data" class="filters">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="signature">
+    <input type="file" name="signature" accept="image/png,image/jpeg,image/webp">
+    <button class="btn primary">{{ _('Save signature') }}</button>
+    {% if g.user.signature_stored %}<button class="btn danger" name="remove" value="1" formnovalidate>{{ _('Remove') }}</button>{% endif %}
+  </form>
+</div>
+{% endif %}
 {% endblock %}

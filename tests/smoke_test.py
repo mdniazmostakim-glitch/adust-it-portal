@@ -126,17 +126,41 @@ post(u, "/tickets/new", {"title": "x", "category_id": "1", "priority": "5", "des
 ok(post(u, "/tickets/new", {"title": "x", "category_id": "1", "priority": "5", "description": "x", "asset_tag": "NOPE"}, content_type="multipart/form-data"), "was found")
 print("urgent+sms ok")
 
-# ---------- approval flow (category 13 = New equipment / Purchase)
+# ---------- approval flow (category 13 = New equipment / Purchase): chairman -> Registrar -> IT
+post(admin, "/admin/users", {"name": "Registrar Sir", "email": "registrar@adust.edu.bd", "role": "user", "department": "Registrar Office", "approver_title": "registrar", "password": "registrar1"})
+reg = client(); login(reg, "registrar@adust.edu.bd", "registrar1")
+png = (b"\x89PNG\r\n\x1a\n" + b"0" * 64)
+ok(post(reg, "/profile", {"action": "signature", "signature": (io.BytesIO(png), "sig.png")}, content_type="multipart/form-data"), "Signature saved")
+assert reg.get("/profile/signature").status_code == 200
 emails.clear()
-ok(post(u, "/tickets/new", {"title": "Need a new laptop", "category_id": "13", "priority": "5", "description": "old one broken"}, content_type="multipart/form-data"), "department head for approval", "Waiting for approval")
+ok(post(u, "/tickets/new", {"title": "Need a new laptop", "category_id": "13", "priority": "5", "description": "old one broken"}, content_type="multipart/form-data"), "department head for approval", "Waiting for approval", "Department approval")
 tid = q("SELECT id FROM tickets WHERE title='Need a new laptop'")[0][0]
 assert any(e[0] == ["head@adust.edu.bd"] for e in emails), emails
 ok(head.get("/"), "waiting for your approval")
 ok(head.get("/approvals"), "Need a new laptop")
 assert it.get("/tickets?status=pending_approval").status_code == 200
 ok(post(head, f"/tickets/{tid}/approve", {"decision": "reject"}), "reason for rejecting")
-ok(post(head, f"/tickets/{tid}/approve", {"decision": "approve", "comment": "OK, budget available"}), "approved and sent")
-assert q("SELECT status, approved_by FROM tickets WHERE id=?", tid)[0][:] == ("new", 3)
+assert b"Need a new laptop" not in reg.get("/approvals").data and reg.get(f"/tickets/{tid}").status_code == 403
+emails.clear()
+ok(post(head, f"/tickets/{tid}/approve", {"decision": "approve", "comment": "OK, budget available"}), "goes to the Registrar")
+assert q("SELECT status, approval_stage FROM tickets WHERE id=?", tid)[0][:] == ("pending_approval", "registrar")
+assert any(e[0] == ["registrar@adust.edu.bd"] and "Registrar approval needed" in e[1] for e in emails), emails
+assert not any("New approved request" in e[1] for e in emails)            # IT not yet involved
+assert head.post(f"/tickets/{tid}/approve", data={"csrf_token": tok(head), "decision": "approve"}).status_code == 403
+ok(u.get(f"/tickets/{tid}"), "Registrar approval", "Registrar Sir")
+ok(reg.get("/approvals"), "Need a new laptop")
+emails.clear()
+ok(post(reg, f"/tickets/{tid}/approve", {"decision": "approve", "comment": "Purchase approved",
+        "file": (io.BytesIO(b"%PDF-1.4 demand"), "demand-letter.pdf")}, content_type="multipart/form-data"), "approved and sent")
+assert q("SELECT status, approval_stage, approved_by FROM tickets WHERE id=?", tid)[0][:] == ("new", None, uid("registrar@adust.edu.bd"))
+assert any("New approved request" in e[1] for e in emails)
+card = ok(it.get(f"/tickets/{tid}/print"), "Approvals", "Dr. Head CSE", "Chairman, Computer Science", "Registrar Sir", "demand-letter.pdf")
+a_ids = [r[0] for r in q("SELECT id FROM approvals WHERE ticket_id=? ORDER BY id", tid)]
+assert f"/approvals/{a_ids[1]}/signature".encode() in card.data and f"/approvals/{a_ids[0]}/signature".encode() not in card.data
+assert it.get(f"/approvals/{a_ids[1]}/signature").data == png
+assert it.get(f"/approvals/{a_ids[1]}/file").data == b"%PDF-1.4 demand"
+ok(reg.get(f"/tickets/{tid}"), "Need a new laptop")                       # registrar keeps access afterwards
+print("two-stage approval ok")
 assert head.post(f"/tickets/{tid}/update", data={"csrf_token": tok(head), "body": "hi"}).status_code == 403
 other = client(); post(other, "/register", {"name": "Other", "email": "o@adust.edu.bd", "department": "Law", "password": "secret123", "confirm": "secret123"}); approve("o@adust.edu.bd"); login(other, "o@adust.edu.bd", "secret123")
 assert other.get(f"/tickets/{tid}").status_code == 403 and other.get("/approvals").status_code == 403
@@ -161,23 +185,29 @@ assert b"New keyboard" not in coord.get("/approvals").data
 assert coord.post(f"/tickets/{k1}/approve", data={"csrf_token": tok(coord), "decision": "approve"}).status_code == 403
 ok(u.get(f"/tickets/{k1}"), "Waiting for approval from", "Dr. Head CSE", "Chairman")
 with app.app_context():                                                # chairman does not respond in time
-    A.get_db().execute("UPDATE tickets SET created_at=? WHERE id=?", (A.now(timedelta(hours=-30)), k1)); A.get_db().commit()
+    A.get_db().execute("UPDATE tickets SET created_at=?, updated_at=? WHERE id=?", (A.now(timedelta(hours=-30)), A.now(timedelta(hours=-30)), k1)); A.get_db().commit()
     A.housekeeping()
     A.set_setting("last_backup", "")
 assert any(e[0] == ["coord@adust.edu.bd"] and "chairman has not responded" in e[1] for e in emails), emails
 ok(coord.get("/approvals"), "New keyboard")
-ok(post(coord, f"/tickets/{k1}/approve", {"decision": "approve"}), "approved and sent")
+ok(post(coord, f"/tickets/{k1}/approve", {"decision": "approve"}), "goes to the Registrar")
+ok(post(reg, f"/tickets/{k1}/approve", {"decision": "approve"}), "approved and sent")
 ok(u.get(f"/tickets/{k1}"), "Approved by Coordinator, Computer Science &amp; Engineering (CSE)")
 emails.clear()
 k2 = new_purchase(eeet, "Projector lamp for EEE")                      # EEE has only a coordinator
 assert [e[0][0] for e in emails if "Approval needed" in e[1]] == ["eeecoord@adust.edu.bd"]
-ok(post(eeec, f"/tickets/{k2}/approve", {"decision": "approve"}), "approved and sent")
+ok(post(eeec, f"/tickets/{k2}/approve", {"decision": "approve"}), "goes to the Registrar")
 k3 = new_purchase(coord, "Coordinator asks for a monitor")             # coordinator -> chairman approves
 assert q("SELECT status FROM tickets WHERE id=?", k3)[0][0] == "pending_approval"
-ok(post(head, f"/tickets/{k3}/approve", {"decision": "approve"}), "approved and sent")
-k4 = new_purchase(eeec, "EEE coordinator asks for a UPS")              # top approver of EEE -> no approval
-k5 = new_purchase(head, "Chairman asks for a printer")                 # chairman -> no approval
-assert [r[0] for r in q("SELECT status FROM tickets WHERE id IN (?, ?)", k4, k5)] == ["new", "new"]
+ok(post(head, f"/tickets/{k3}/approve", {"decision": "approve"}), "goes to the Registrar")
+k4 = new_purchase(eeec, "EEE coordinator asks for a UPS")              # top approver of EEE -> straight to Registrar
+k5 = new_purchase(head, "Chairman asks for a printer")                 # chairman -> straight to Registrar
+assert [tuple(r) for r in q("SELECT status, approval_stage FROM tickets WHERE id IN (?, ?)", k4, k5)] == [("pending_approval", "registrar")] * 2
+for k in (k2, k3, k4, k5):
+    post(reg, f"/tickets/{k}/approve", {"decision": "approve"})
+k6 = new_purchase(reg, "Registrar asks for a scanner")                 # registrar's own purchase -> no approval
+post(u, "/tickets/new", {"title": "Keyboard keys stuck", "category_id": "1", "priority": "5", "description": "repair"}, content_type="multipart/form-data")
+assert [r[0] for r in q("SELECT status FROM tickets WHERE title IN ('Registrar asks for a scanner', 'Keyboard keys stuck')")] == ["new", "new"]
 ok(admin.get("/admin/departments"), "Dr. Head CSE (Chairman)", "CSE Coordinator (Coordinator)")
 print("chairman/coordinator routing ok")
 
@@ -213,7 +243,7 @@ assert q("SELECT COUNT(*) FROM tickets WHERE title='Monthly server check' AND as
 with app.app_context():
     res2 = A.housekeeping()
 assert res2["escalated"] == 0 and res2["overdue"] == 0 and res2["recurring"] == 0 and res2["backup"] == "-", res2   # idempotent
-bk = os.listdir(os.path.join(d, "bk")); assert len(bk) == 1
+bk = sorted(os.listdir(os.path.join(d, "bk")), reverse=True); assert len(bk) >= 1
 z = zipfile.ZipFile(os.path.join(d, "bk", bk[0])); assert "portal.db" in z.namelist()
 assert admin.get(f"/admin/backups/{bk[0]}").status_code == 200 and admin.get("/admin/backups/../t.db").status_code == 404
 print("housekeeping ok")

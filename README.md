@@ -13,7 +13,7 @@ works in **English and Bangla**, and runs on a single small server (Python + SQL
 | **University network only** | Only allowed IPs/ranges can open the site (ADUST: `172.20.0.0/16`); others see "Access restricted". Managed in *Admin → Network access*. Admin cannot lock themselves out. |
 | **Sign-in** | **Any email** (institutional or personal, e.g. Gmail) **or** user ID + password. Anyone on the university network can register; set `PORTAL_ALLOWED_EMAIL_DOMAINS` to limit domains. **Forgot password** by email link (1 hour, single use). **Lock-out** after 5 wrong passwords (15 min). *Optional, off by default:* sign in with the university webmail password (IMAP). |
 | **Assign work to IT** | Category, priority 1–10, urgent flag, needed-by date, which IT staff, location, **device (asset tag)**, description, remarks, attachment. Code like `IT-2026-0001`. Matching **help articles are suggested** while filling the form. |
-| **Department-head approval** | Categories marked "needs approval" (e.g. *New equipment / Purchase*) go first to the requester's department head, who approves or rejects with a reason. |
+| **Approvals (chairman → Registrar)** | Categories can need department approval and/or the Registrar's final approval. New purchases go: requester → department **Chairman** (or **Coordinator** if there is no chairman, or if the chairman is overdue) → **Registrar** → IT. Each decision is recorded with the approver's title, comment, uploaded **signature** and optional signed demand letter, and printed on the job card. |
 | **IT workflow** | Queue sorted by urgency → priority → deadline. Status, reassign, priority, device, replies, attachments, **internal IT notes**. **Printable job card** with signature lines. |
 | **Requester** | Track progress, comment, cancel, **confirm + rate (1–5 ★)** when done, or reopen. |
 | **Notifications** | Bell + desktop pop-up + **email**; **SMS** to IT for urgent work and escalations. |
@@ -43,6 +43,7 @@ flask --app app run --host 0.0.0.0
 3. Right-click `windows\allow-firewall.bat` → **Run as administrator** (once).
 4. Double-click `windows\create-admin.bat` (once) to create the IT admin.
 5. Double-click `windows\start-portal.bat` every time you want to run the portal.
+6. New version: stop the portal, download the new ZIP to Downloads, double-click `windows\update-portal.bat`.
 
 ## Deploy on the university server (Ubuntu)
 

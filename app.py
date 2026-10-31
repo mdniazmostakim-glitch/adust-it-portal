@@ -62,7 +62,7 @@ DEFAULT_CATEGORIES = [
     ("Email / Webmail", 0), ("University website", 0), ("Printer / Scanner / Photocopier", 0),
     ("CCTV / Security system", 0), ("Account / Password", 0), ("Projector / Multimedia", 0),
     ("Lab setup", 0), ("Server / Database", 0), ("Data / Report request", 0),
-    ("New equipment / Purchase", 1), ("Maintenance", 0), ("Other", 0),
+    ("New equipment / Purchase", 1, 1), ("Maintenance", 0), ("Other", 0),
 ]
 
 DEFAULT_DEPARTMENTS = [
@@ -90,7 +90,8 @@ ROLES = {"user": "Requester", "it": "IT staff", "admin": "IT admin"}
 # a coordinator approves when the department has no chairman, or when the
 # chairman has not responded within the reminder time (Settings).
 APPROVER_TITLES = {"": "No approval role", "chairman": "Chairman", "head": "Head of office",
-                   "coordinator": "Coordinator"}
+                   "coordinator": "Coordinator", "registrar": "Registrar (final purchase approval)"}
+STAGES = {"department": "Department approval", "registrar": "Registrar approval"}
 PRIMARY_TITLES = ("chairman", "head")
 
 ASSET_TYPES = [
@@ -184,7 +185,8 @@ def init_db():
     db.execute("PRAGMA journal_mode = WAL")
     migrate(db)
     if db.execute("SELECT COUNT(*) FROM categories").fetchone()[0] == 0:
-        db.executemany("INSERT INTO categories (name, needs_approval) VALUES (?, ?)", DEFAULT_CATEGORIES)
+        db.executemany("INSERT INTO categories (name, needs_approval, needs_registrar) VALUES (?, ?, ?)",
+                       [(c[0], c[1], c[2] if len(c) > 2 else 0) for c in DEFAULT_CATEGORIES])
     if db.execute("SELECT COUNT(*) FROM departments").fetchone()[0] == 0:
         db.executemany("INSERT INTO departments (name) VALUES (?)", [(d,) for d in DEFAULT_DEPARTMENTS])
     db.executemany("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", DEFAULT_SETTINGS.items())
@@ -198,6 +200,9 @@ def init_db():
 MIGRATIONS = [
     ("users", "approved", "INTEGER NOT NULL DEFAULT 1"),
     ("users", "approver_title", "TEXT NOT NULL DEFAULT ''"),
+    ("users", "signature_stored", "TEXT"),
+    ("categories", "needs_registrar", "INTEGER NOT NULL DEFAULT 0"),
+    ("tickets", "approval_stage", "TEXT"),
 ]
 
 
@@ -208,6 +213,12 @@ def migrate(db):
             db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
     # Before titles existed every approver was a plain "department head": treat them as chairman.
     db.execute("UPDATE users SET approver_title = 'chairman' WHERE is_approver = 1 AND approver_title = ''")
+    if not db.execute("SELECT 1 FROM settings WHERE key = 'registrar_stage_added'").fetchone():
+        # New purchases need the Registrar's final approval (once, so admins can change it later).
+        db.execute("UPDATE categories SET needs_registrar = 1 WHERE name = 'New equipment / Purchase'")
+        db.execute("UPDATE tickets SET approval_stage = 'department' WHERE status = 'pending_approval' "
+                   "AND approval_stage IS NULL")
+        db.execute("INSERT INTO settings (key, value) VALUES ('registrar_stage_added', '1')")
 
 
 def get_setting(key):
@@ -412,12 +423,13 @@ def departments():
 
 app.jinja_env.globals.update(
     _=_, csrf_token=csrf_token, STATUSES=STATUSES, ROLES=ROLES, OPEN_STATUSES=OPEN_STATUSES,
-    APPROVER_TITLES=APPROVER_TITLES,
+    APPROVER_TITLES=APPROVER_TITLES, STAGES=STAGES,
     ASSET_TYPES=ASSET_TYPES, ASSET_STATUSES=ASSET_STATUSES, FREQUENCIES=FREQUENCIES, LEVELS=LEVELS,
     is_it=is_it, is_admin=is_admin, unread_count=unread_count, approvals_count=approvals_count,
     active_announcements=active_announcements, departments=departments,
     now_year=lambda: date.today().year, today=lambda: date.today().isoformat(),
     sidebar_side=lambda: get_setting("sidebar_side"),
+    approver_short=lambda title: "Registrar" if title == "registrar" else APPROVER_TITLES.get(title, ""),
     pending_accounts_count=lambda: pending_accounts_count(),
 )
 
@@ -723,9 +735,23 @@ def approver_ids(requester, include_coordinators=False):
     return coordinators or it_team_ids(admins_only=True)
 
 
+def registrar_ids():
+    rows = get_db().execute("SELECT id FROM users WHERE active = 1 AND approved = 1 "
+                            "AND approver_title = 'registrar'").fetchall()
+    return [r[0] for r in rows] or it_team_ids(admins_only=True)
+
+
+def stage_approver_ids(t, requester=None):
+    """Who decides the current approval stage of a pending ticket."""
+    if t["approval_stage"] == "registrar":
+        return registrar_ids()
+    requester = requester or {"id": t["requester_id"], "department": t["requester_dept"]}
+    return approver_ids(requester, include_coordinators=bool(t["escalated_at"]))
+
+
 def needs_department_approval(requester):
     """The department's top approver does not need anyone's approval."""
-    if is_it(requester) or requester["approver_title"] in PRIMARY_TITLES:
+    if is_it(requester) or requester["approver_title"] in (*PRIMARY_TITLES, "registrar"):
         return False
     if requester["approver_title"] == "coordinator":
         primary, _c = department_approvers(requester["department"], requester["id"])
@@ -976,12 +1002,38 @@ def set_language(code):
     return redirect(back if urllib.parse.urlparse(back).netloc in ("", request.host) else url_for("index"))
 
 
+@app.route("/profile/signature")
+@login_required
+def my_signature():
+    if not g.user["signature_stored"]:
+        abort(404)
+    return send_from_directory(app.config["UPLOAD_FOLDER"], g.user["signature_stored"])
+
+
 @app.route("/profile", methods=["GET", "POST"])
 @login_required
 def profile():
     db = get_db()
     if request.method == "POST":
         f = request.form
+        if f.get("action") == "signature":
+            if f.get("remove"):
+                db.execute("UPDATE users SET signature_stored = NULL WHERE id = ?", (g.user["id"],))
+                db.commit()
+                flash(_("Signature removed."), "success")
+                return redirect(url_for("profile"))
+            upload = request.files.get("signature")
+            ext = upload.filename.rsplit(".", 1)[-1].lower() if upload and "." in upload.filename else ""
+            if ext not in ("png", "jpg", "jpeg", "webp"):
+                flash(_("Please choose a PNG or JPG image of your signature."), "error")
+            else:
+                # A new file each time, so signatures on earlier approvals stay as they were.
+                stored = f"signature_{g.user['id']}_{uuid.uuid4().hex}.{ext}"
+                upload.save(os.path.join(app.config["UPLOAD_FOLDER"], stored))
+                db.execute("UPDATE users SET signature_stored = ? WHERE id = ?", (stored, g.user["id"]))
+                db.commit()
+                flash(_("Signature saved. It will appear on your approvals and on printed job cards."), "success")
+            return redirect(url_for("profile"))
         if f.get("action") == "password":
             if g.user["password_hash"] and not check_password_hash(g.user["password_hash"], f.get("current", "")):
                 flash(_("Current password is incorrect."), "error")
@@ -1133,13 +1185,17 @@ def ticket_list():
 def ticket_export():
     where, args, _status = ticket_filters(request.args)
     rows = get_db().execute(f"{TICKET_SELECT} {where} ORDER BY t.id DESC", args).fetchall()
+    trail = {}
+    for a in get_db().execute("SELECT * FROM approvals ORDER BY id"):
+        trail[a["ticket_id"]] = (trail.get(a["ticket_id"], "") + ("; " if a["ticket_id"] in trail else "")
+                                 + f"{a['decision'].title()} by {a['approver_name']} ({a['approver_title']}) {a['created_at'][:10]}")
     headers = ["Code", "Title", "Category", "Priority", "Urgent", "Status", "Needed by", "Requested by",
                "Department", "Assigned to", "Asset", "Location", "Submitted", "First response",
-               "Resolved", "Rating", "Description", "Remarks"]
+               "Resolved", "Rating", "Approvals", "Description", "Remarks"]
     data = [[t["code"], t["title"], t["category"], t["priority"], "Yes" if t["urgent"] else "",
              STATUSES[t["status"]], t["due_date"], t["requester_name"], t["requester_dept"],
              t["assignee_name"] or "", t["asset_tag"] or "", t["location"], t["created_at"],
-             t["first_response_at"], t["resolved_at"], t["rating"], t["description"], t["remarks"]]
+             t["first_response_at"], t["resolved_at"], t["rating"], trail.get(t["id"], ""), t["description"], t["remarks"]]
             for t in rows]
     return xlsx_response(f"it-requests-{date.today()}.xlsx", [("Requests", headers, data)])
 
@@ -1188,25 +1244,30 @@ def create_ticket(requester, title, category_id, priority=5, urgent=False, due_d
     and notify the right people. Returns the new ticket row."""
     db = get_db()
     category = db.execute("SELECT * FROM categories WHERE id = ?", (category_id,)).fetchone()
-    needs_approval = (category is not None and category["needs_approval"] and recurring_id is None
-                      and needs_department_approval(requester))
+    dept_stage = (category is not None and category["needs_approval"] and recurring_id is None
+                  and needs_department_approval(requester))
+    registrar_stage = (category is not None and category["needs_registrar"] and recurring_id is None
+                       and requester["approver_title"] != "registrar")
+    stage = "department" if dept_stage else ("registrar" if registrar_stage else None)
+    needs_approval = stage is not None
     status = "pending_approval" if needs_approval else "new"
     ts = now()
     cur = db.execute(
         "INSERT INTO tickets (title, description, remarks, category_id, priority, urgent, due_date, location, "
-        "status, requester_id, assigned_to, asset_id, recurring_id, attachment_name, attachment_stored, "
-        "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (title, description, remarks, category_id, priority, 1 if urgent else 0, due_date, location, status,
+        "status, approval_stage, requester_id, assigned_to, asset_id, recurring_id, attachment_name, "
+        "attachment_stored, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (title, description, remarks, category_id, priority, 1 if urgent else 0, due_date, location, status, stage,
          requester["id"], assigned_to, asset_id, recurring_id, attachment[0], attachment[1], ts, ts))
     tid = cur.lastrowid
     code = f"IT-{date.today().year}-{tid:04d}"
     db.execute("UPDATE tickets SET code = ? WHERE id = ?", (code, tid))
     add_update(tid, requester["id"], "Created from recurring maintenance schedule" if recurring_id
-               else "Request submitted" + ("; waiting for department head approval" if needs_approval else ""))
+               else "Request submitted" + {"department": "; waiting for department approval",
+                                           "registrar": "; waiting for Registrar approval"}.get(stage, ""))
     db.commit()
     ticket = db.execute("SELECT * FROM tickets WHERE id = ?", (tid,)).fetchone()
     if needs_approval:
-        notify(approver_ids(requester), ticket,
+        notify(approver_ids(requester) if stage == "department" else registrar_ids(), ticket,
                f"Approval needed: {requester['name']} ({requester['department']}) requested \"{title}\"")
     else:
         tag = "URGENT " if urgent else ""
@@ -1282,6 +1343,8 @@ def new_ticket():
 
 
 def approver_label(user):
+    if user["approver_title"] == "registrar":
+        return "Registrar"
     title = APPROVER_TITLES.get(user["approver_title"]) if user["approver_title"] else "IT admin"
     return f"{title}, {user['department']}" if user["department"] else title
 
@@ -1293,6 +1356,8 @@ def can_approve(t):
         return True
     if not g.user["is_approver"] or t["requester_id"] == g.user["id"]:
         return False
+    if t["approval_stage"] == "registrar":
+        return g.user["approver_title"] == "registrar"
     requester = {"id": t["requester_id"], "department": t["requester_dept"]}
     return g.user["id"] in approver_ids(requester, include_coordinators=bool(t["escalated_at"]))
 
@@ -1306,12 +1371,19 @@ def load_ticket(ticket_id):
     if (g.user["is_approver"] and t["requester_dept"]
             and t["requester_dept"].lower() == g.user["department"].lower()):
         return t  # department heads can view their department's requests
+    if g.user["approver_title"] == "registrar" and (
+            t["approval_stage"] == "registrar"
+            or get_db().execute("SELECT 1 FROM approvals WHERE ticket_id = ? AND stage = 'registrar'",
+                                (t["id"],)).fetchone()):
+        return t  # the Registrar sees purchase requests that reached them
     abort(403)
 
 
 def ticket_timeline(ticket_id, include_internal):
     return get_db().execute(
-        "SELECT u.*, COALESCE(us.name, 'System') AS user_name, COALESCE(us.role, 'system') AS user_role "
+        "SELECT u.*, COALESCE(us.name, 'System') AS user_name, COALESCE(us.role, 'system') AS user_role, "
+        "COALESCE(us.approver_title, '') AS user_title, "
+        "(us.id IS NOT NULL AND us.id = (SELECT requester_id FROM tickets WHERE id = u.ticket_id)) AS is_requester "
         "FROM ticket_updates u LEFT JOIN users us ON us.id = u.user_id WHERE u.ticket_id = ? "
         + ("" if include_internal else "AND u.internal = 0 ") + "ORDER BY u.id", (ticket_id,)).fetchall()
 
@@ -1326,19 +1398,20 @@ def ticket_detail(ticket_id):
     db.commit()
     waiting_on = []
     if ticket["status"] == "pending_approval":
-        ids = approver_ids({"id": ticket["requester_id"], "department": ticket["requester_dept"]},
-                           include_coordinators=bool(ticket["escalated_at"]))
+        ids = stage_approver_ids(ticket)
         marks = ",".join("?" * len(ids)) or "NULL"
         waiting_on = db.execute(f"SELECT name, approver_title, role FROM users WHERE id IN ({marks})", ids).fetchall()
     return render_template("ticket.html", t=ticket, updates=updates, staff=it_staff(),
-                           it_statuses=IT_SETTABLE, can_approve=can_approve(ticket), waiting_on=waiting_on)
+                           it_statuses=IT_SETTABLE, can_approve=can_approve(ticket), waiting_on=waiting_on,
+                           approvals=ticket_approvals(ticket_id))
 
 
 @app.route("/tickets/<int:ticket_id>/print")
 @login_required
 def ticket_print(ticket_id):
     ticket = load_ticket(ticket_id)
-    return render_template("job_card.html", t=ticket, updates=ticket_timeline(ticket_id, False))
+    return render_template("job_card.html", t=ticket, updates=ticket_timeline(ticket_id, False),
+                           approvals=ticket_approvals(ticket_id))
 
 
 @app.route("/tickets/<int:ticket_id>/approve", methods=["POST"])
@@ -1350,30 +1423,77 @@ def ticket_approve(ticket_id):
     db = get_db()
     decision = request.form.get("decision")
     comment = request.form.get("comment", "").strip()
+    if decision not in ("approve", "reject"):
+        abort(400)
+    if decision == "reject" and not comment:
+        flash(_("Please write the reason for rejecting."), "error")
+        return redirect(url_for("ticket_detail", ticket_id=ticket_id))
+    upload = save_upload()
+    if upload is False:
+        flash(_("That attachment type is not allowed."), "error")
+        return redirect(url_for("ticket_detail", ticket_id=ticket_id))
     ts = now()
-    if decision == "approve":
-        db.execute("UPDATE tickets SET status = 'new', approved_by = ?, approved_at = ?, updated_at = ? WHERE id = ?",
-                   (g.user["id"], ts, ts, ticket_id))
-        add_update(ticket_id, g.user["id"], f"Approved by {approver_label(g.user)}", comment)
+    stage = t["approval_stage"] or "department"
+    db.execute("INSERT INTO approvals (ticket_id, stage, user_id, approver_name, approver_title, decision, comment, "
+               "signature_stored, attachment_name, attachment_stored, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+               (ticket_id, stage, g.user["id"], g.user["name"], approver_label(g.user),
+                "approved" if decision == "approve" else "rejected", comment, g.user["signature_stored"],
+                upload[0], upload[1], ts))
+    category = db.execute("SELECT * FROM categories WHERE id = ?", (t["category_id"],)).fetchone()
+    if decision == "approve" and stage == "department" and category and category["needs_registrar"]:
+        # Chairman approved a new purchase: the Registrar gives the final approval.
+        db.execute("UPDATE tickets SET approval_stage = 'registrar', escalated_at = NULL, updated_at = ? WHERE id = ?",
+                   (ts, ticket_id))
+        add_update(ticket_id, g.user["id"], f"Approved by {approver_label(g.user)}; sent to the Registrar", comment,
+                   attachment=upload)
+        db.commit()
+        t = db.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
+        notify([t["requester_id"]], t, f"Your request was approved by {g.user['name']} and sent to the Registrar")
+        notify(registrar_ids(), t, f"Registrar approval needed (approved by {approver_label(g.user)}): {t['title']}")
+        flash(_("Approved. The request now goes to the Registrar for final approval."), "success")
+    elif decision == "approve":
+        db.execute("UPDATE tickets SET status = 'new', approval_stage = NULL, approved_by = ?, approved_at = ?, "
+                   "updated_at = ? WHERE id = ?", (g.user["id"], ts, ts, ticket_id))
+        add_update(ticket_id, g.user["id"], f"Approved by {approver_label(g.user)}", comment, attachment=upload)
         db.commit()
         t = db.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
         notify([t["requester_id"]], t, f"Your request was approved by {g.user['name']} and sent to the IT section")
         notify(it_recipients(t), t, f"New approved request: {t['title']}", sms=bool(t["urgent"]))
         flash(_("Request approved and sent to the IT section."), "success")
-    elif decision == "reject":
-        if not comment:
-            flash(_("Please write the reason for rejecting."), "error")
-            return redirect(url_for("ticket_detail", ticket_id=ticket_id))
-        db.execute("UPDATE tickets SET status = 'rejected', approved_by = ?, approved_at = ?, updated_at = ? "
-                   "WHERE id = ?", (g.user["id"], ts, ts, ticket_id))
-        add_update(ticket_id, g.user["id"], f"Not approved by {approver_label(g.user)}", comment)
+    else:
+        db.execute("UPDATE tickets SET status = 'rejected', approval_stage = NULL, approved_by = ?, approved_at = ?, "
+                   "updated_at = ? WHERE id = ?", (g.user["id"], ts, ts, ticket_id))
+        add_update(ticket_id, g.user["id"], f"Not approved by {approver_label(g.user)}", comment, attachment=upload)
         db.commit()
         t = db.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
         notify([t["requester_id"]], t, f"Your request was not approved by {g.user['name']}: {comment}")
         flash(_("Request rejected."), "success")
-    else:
-        abort(400)
     return redirect(url_for("ticket_detail", ticket_id=ticket_id))
+
+
+def ticket_approvals(ticket_id):
+    return get_db().execute("SELECT * FROM approvals WHERE ticket_id = ? ORDER BY id", (ticket_id,)).fetchall()
+
+
+@app.route("/approvals/<int:approval_id>/signature")
+@login_required
+def approval_signature(approval_id):
+    a = get_db().execute("SELECT * FROM approvals WHERE id = ?", (approval_id,)).fetchone()
+    if a is None or not a["signature_stored"]:
+        abort(404)
+    load_ticket(a["ticket_id"])  # access check
+    return send_from_directory(app.config["UPLOAD_FOLDER"], a["signature_stored"])
+
+
+@app.route("/approvals/<int:approval_id>/file")
+@login_required
+def approval_file(approval_id):
+    a = get_db().execute("SELECT * FROM approvals WHERE id = ?", (approval_id,)).fetchone()
+    if a is None or not a["attachment_stored"]:
+        abort(404)
+    load_ticket(a["ticket_id"])
+    return send_from_directory(app.config["UPLOAD_FOLDER"], a["attachment_stored"], as_attachment=True,
+                               download_name=a["attachment_name"])
 
 
 @app.route("/approvals")
@@ -2005,7 +2125,7 @@ def admin_departments():
     rows = db.execute(
         "SELECT d.*, (SELECT COUNT(*) FROM users u WHERE lower(u.department) = lower(d.name)) AS people, "
         "(SELECT group_concat(u.name || ' (' || CASE u.approver_title WHEN 'coordinator' THEN 'Coordinator' "
-        "WHEN 'head' THEN 'Head of office' ELSE 'Chairman' END || ')', ', ') FROM users u "
+        "WHEN 'head' THEN 'Head of office' WHEN 'registrar' THEN 'Registrar' ELSE 'Chairman' END || ')', ', ') FROM users u "
         "WHERE u.is_approver = 1 AND u.active = 1 "
         " AND lower(u.department) = lower(d.name)) AS heads FROM departments d ORDER BY d.name").fetchall()
     return render_template("admin/departments.html", rows=rows)
@@ -2021,10 +2141,12 @@ def admin_categories():
             db.execute("UPDATE categories SET active = 1 - active WHERE id = ?", (int(f["toggle"]),))
         elif f.get("approval", "").isdigit():
             db.execute("UPDATE categories SET needs_approval = 1 - needs_approval WHERE id = ?", (int(f["approval"]),))
+        elif f.get("registrar", "").isdigit():
+            db.execute("UPDATE categories SET needs_registrar = 1 - needs_registrar WHERE id = ?", (int(f["registrar"]),))
         elif f.get("name", "").strip():
             try:
-                db.execute("INSERT INTO categories (name, needs_approval) VALUES (?, ?)",
-                           (f["name"].strip(), 1 if f.get("needs_approval") else 0))
+                db.execute("INSERT INTO categories (name, needs_approval, needs_registrar) VALUES (?, ?, ?)",
+                           (f["name"].strip(), 1 if f.get("needs_approval") else 0, 1 if f.get("needs_registrar") else 0))
                 flash(_("Category added."), "success")
             except sqlite3.IntegrityError:
                 flash(_("That category already exists."), "error")
@@ -2329,9 +2451,14 @@ def housekeeping():
     # 3. Approvals waiting on a department head
     cutoff = now(timedelta(hours=-int_setting("approval_remind_hours")))
     for t in db.execute("SELECT * FROM tickets WHERE status = 'pending_approval' AND escalated_at IS NULL "
-                        "AND created_at < ?", (cutoff,)).fetchall():
+                        "AND updated_at < ?", (cutoff,)).fetchall():
         requester = db.execute("SELECT * FROM users WHERE id = ?", (t["requester_id"],)).fetchone()
         db.execute("UPDATE tickets SET escalated_at = ? WHERE id = ?", (now(), t["id"]))
+        if t["approval_stage"] == "registrar":
+            db.commit()
+            notify(registrar_ids(), t, f"Reminder: request waiting for Registrar approval: {t['title']}")
+            result["approval_reminders"] += 1
+            continue
         before = set(approver_ids(requester))
         after = set(approver_ids(requester, include_coordinators=True))
         if after - before:

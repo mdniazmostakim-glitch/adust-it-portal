@@ -10,7 +10,7 @@
     <label>{{ _('Category') }} *
       <select name="category_id" id="category" required>
         <option value="">— {{ _('Select category') }} —</option>
-        {% for c in categories %}<option value="{{ c.id }}" data-approval="{{ c.needs_approval }}" {{ 'selected' if request.form.category_id == c.id|string }}>{{ c.name }}{% if c.needs_approval %} ({{ _('needs approval') }}){% endif %}</option>{% endfor %}
+        {% for c in categories %}<option value="{{ c.id }}" data-approval="{{ c.needs_approval }}" data-registrar="{{ c.needs_registrar }}" {{ 'selected' if request.form.category_id == c.id|string }}>{{ c.name }}{% if c.needs_approval %} ({{ _('needs approval') }}){% endif %}</option>{% endfor %}
       </select></label>
     <label>{{ _('Assign to (IT staff)') }}
       <select name="assigned_to">
@@ -24,6 +24,7 @@
     <div class="span" id="help-suggest" hidden>
       <div class="suggest">💡 <strong>{{ _('These help articles may solve it right away:') }}</strong><ul></ul></div>
     </div>
+    <div class="span" id="registrar-note" hidden><div class="flash warn">🏛 {{ _('New purchase: after your department, the Registrar gives the final approval before the IT section starts.') }}</div></div>
     <div class="span" id="approval-note" hidden><div class="flash warn">✍ {{ _('This category needs approval from your department chairman (or coordinator) before it goes to the IT section.') }}</div></div>
     <label class="check urgent-box"><input type="checkbox" name="urgent" value="1" {{ 'checked' if request.form.urgent }}> <span><strong>{{ _('Urgent') }}</strong> — {{ _('work is blocked, needs immediate attention') }}</span></label>
     <label>{{ _('Location (building / room)') }}
@@ -42,10 +43,12 @@
 <script>
 (function () {
   var sel = document.getElementById('category'), box = document.getElementById('help-suggest'),
-      list = box.querySelector('ul'), note = document.getElementById('approval-note');
+      list = box.querySelector('ul'), note = document.getElementById('approval-note'),
+      regNote = document.getElementById('registrar-note');
   function update() {
     var opt = sel.options[sel.selectedIndex];
     note.hidden = !(opt && opt.dataset.approval === '1'{% if self_approves %} && false{% endif %});
+    regNote.hidden = !(opt && opt.dataset.registrar === '1');
     if (!sel.value) { box.hidden = true; return; }
     fetch('{{ url_for("api_help") }}?category=' + sel.value, { credentials: 'same-origin' })
       .then(function (r) { return r.json(); })
