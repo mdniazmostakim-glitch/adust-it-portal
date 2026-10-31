@@ -6,7 +6,9 @@
 <select name="{{ name }}" {{ 'required' if required }}>
   <option value="">— {{ _('Select department / office') }} —</option>
   {% set depts = departments() %}
-  {% for d in depts %}<option {{ 'selected' if current == d }}>{{ d }}</option>{% endfor %}
+  {% for grp, names in departments_grouped() %}
+  <optgroup label="{{ _(grp) }}">{% for d in names %}<option {{ 'selected' if current == d }}>{{ d }}</option>{% endfor %}</optgroup>
+  {% endfor %}
   {% if current and current not in depts %}<option selected>{{ current }}</option>{% endif %}
 </select>
 {% endmacro %}

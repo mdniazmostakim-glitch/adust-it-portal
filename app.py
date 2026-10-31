@@ -65,13 +65,61 @@ DEFAULT_CATEGORIES = [
     ("New equipment / Purchase", 1, 1), ("Maintenance", 0), ("Other", 0),
 ]
 
+# University structure, taken from adust.edu.bd (About and Academics menus).
+# (group, name, parent office for approval fallback, skip department approval)
+G_TOP, G_OFF, G_REG, G_CELL = ("Board of Trustees & Vice-Chancellor", "Administrative offices",
+                               "Office of the Registrar — sections", "Centres, cells & services")
+F_ARTS, F_BUS, F_ENG, F_HEALTH, F_LAW = ("Faculty of Arts & Social Sciences", "Faculty of Business",
+                                        "Faculty of Engineering & Technology", "Faculty of Health Science",
+                                        "Faculty of Law")
+REG = "Office of the Registrar"
 DEFAULT_DEPARTMENTS = [
-    "Computer Science & Engineering (CSE)", "Electrical & Electronic Engineering (EEE)",
-    "Textile Engineering", "Pharmacy", "Business Administration (BBA)", "English", "Law",
-    "Public Health", "Registrar Office", "Accounts", "Admission Office",
-    "Office of the Controller of Examinations", "Library", "Vice-Chancellor's Office",
-    "Proctor Office", "IT Section", "Administration",
+    (G_TOP, "Board of Trustees (BoT)", "", 1),
+    (G_TOP, "Office of the Vice-Chancellor", "", 1),
+    (G_OFF, "Office of the Treasurer (Finance & Accounts)", "", 0),
+    (G_OFF, REG, "", 0),
+    (G_OFF, "Office of the Controller of Examinations", "", 0),
+    (G_OFF, "Office of the Proctor", "", 0),
+    (G_REG, "Registrar Office — HR Section", REG, 0),
+    (G_REG, "Registrar Office — Admission Section (Student Information Centre)", REG, 0),
+    (G_REG, "Registrar Office — Public Relation Section", REG, 0),
+    (G_REG, "Registrar Office — Support Service Section", REG, 0),
+    (G_REG, "Registrar Office — Academic Affairs Section", REG, 0),
+    (G_REG, "IT Section", REG, 0),
+    (G_REG, "Registrar Office — Design Section", REG, 0),
+    (G_REG, "Registrar Office — Store Section", REG, 0),
+    (G_CELL, "Institutional Quality Assurance Cell (IQAC)", "", 0),
+    (G_CELL, "Research and Innovation Cell (ARIC)", "", 0),
+    (G_CELL, "Library", "", 0),
+    (G_CELL, "Transport Section", REG, 0),
+    (F_ARTS, "Dean's Office — Faculty of Arts & Social Sciences", "", 0),
+    (F_ARTS, "English", "Dean's Office — Faculty of Arts & Social Sciences", 0),
+    (F_ARTS, "Education", "Dean's Office — Faculty of Arts & Social Sciences", 0),
+    (F_ARTS, "Journalism and Media Studies", "Dean's Office — Faculty of Arts & Social Sciences", 0),
+    (F_BUS, "Dean's Office — Faculty of Business", "", 0),
+    (F_BUS, "Agribusiness", "Dean's Office — Faculty of Business", 0),
+    (F_BUS, "Business Administration (DBA)", "Dean's Office — Faculty of Business", 0),
+    (F_ENG, "Dean's Office — Faculty of Engineering & Technology", "", 0),
+    (F_ENG, "Civil Engineering", "Dean's Office — Faculty of Engineering & Technology", 0),
+    (F_ENG, "Computer Science & Engineering (CSE)", "Dean's Office — Faculty of Engineering & Technology", 0),
+    (F_ENG, "Electrical & Electronic Engineering (EEE)", "Dean's Office — Faculty of Engineering & Technology", 0),
+    (F_ENG, "Fashion Design and Technology", "Dean's Office — Faculty of Engineering & Technology", 0),
+    (F_ENG, "Textile Engineering", "Dean's Office — Faculty of Engineering & Technology", 0),
+    (F_ENG, "Robotics and Automation Engineering", "Dean's Office — Faculty of Engineering & Technology", 0),
+    (F_HEALTH, "Dean's Office — Faculty of Health Science", "", 0),
+    (F_HEALTH, "Pharmacy", "Dean's Office — Faculty of Health Science", 0),
+    (F_HEALTH, "Public Health", "Dean's Office — Faculty of Health Science", 0),
+    (F_LAW, "Dean's Office — Faculty of Law", "", 0),
+    (F_LAW, "Law", "Dean's Office — Faculty of Law", 0),
 ]
+DEPARTMENT_GROUPS = [G_TOP, G_OFF, G_REG, G_CELL, F_ARTS, F_BUS, F_ENG, F_HEALTH, F_LAW, "Other"]
+# Names used by earlier versions of the portal -> current names
+RENAMED_DEPARTMENTS = {
+    "Registrar Office": REG, "Accounts": "Office of the Treasurer (Finance & Accounts)",
+    "Admission Office": "Registrar Office — Admission Section (Student Information Centre)",
+    "Vice-Chancellor's Office": "Office of the Vice-Chancellor", "Proctor Office": "Office of the Proctor",
+    "Business Administration (BBA)": "Business Administration (DBA)",
+}
 
 STATUSES = {
     "pending_approval": "Waiting for approval",
@@ -89,7 +137,7 @@ ROLES = {"user": "Requester", "it": "IT staff", "admin": "IT admin"}
 # Who approves a department's requests. Chairman / head of office come first;
 # a coordinator approves when the department has no chairman, or when the
 # chairman has not responded within the reminder time (Settings).
-APPROVER_TITLES = {"": "No approval role", "chairman": "Chairman", "head": "Head of office",
+APPROVER_TITLES = {"": "No approval role", "chairman": "Chairman", "head": "Head of office / Dean",
                    "coordinator": "Coordinator", "registrar": "Registrar (final purchase approval)"}
 STAGES = {"department": "Department approval", "registrar": "Registrar approval"}
 PRIMARY_TITLES = ("chairman", "head")
@@ -187,8 +235,7 @@ def init_db():
     if db.execute("SELECT COUNT(*) FROM categories").fetchone()[0] == 0:
         db.executemany("INSERT INTO categories (name, needs_approval, needs_registrar) VALUES (?, ?, ?)",
                        [(c[0], c[1], c[2] if len(c) > 2 else 0) for c in DEFAULT_CATEGORIES])
-    if db.execute("SELECT COUNT(*) FROM departments").fetchone()[0] == 0:
-        db.executemany("INSERT INTO departments (name) VALUES (?)", [(d,) for d in DEFAULT_DEPARTMENTS])
+    sync_departments(db)
     db.executemany("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", DEFAULT_SETTINGS.items())
     db.commit()
     for folder in ("UPLOAD_FOLDER", "BACKUP_FOLDER"):
@@ -203,7 +250,31 @@ MIGRATIONS = [
     ("users", "signature_stored", "TEXT"),
     ("categories", "needs_registrar", "INTEGER NOT NULL DEFAULT 0"),
     ("tickets", "approval_stage", "TEXT"),
+    ("departments", "grp", "TEXT NOT NULL DEFAULT 'Other'"),
+    ("departments", "parent", "TEXT NOT NULL DEFAULT ''"),
+    ("departments", "skip_approval", "INTEGER NOT NULL DEFAULT 0"),
+    ("departments", "sort", "INTEGER NOT NULL DEFAULT 0"),
 ]
+
+
+def sync_departments(db):
+    """Add the university structure once (and on upgrades rename old names,
+    moving users and devices with them). Admin changes are kept afterwards."""
+    if db.execute("SELECT value FROM settings WHERE key = 'departments_version'").fetchone():
+        return
+    for old, new in RENAMED_DEPARTMENTS.items():
+        if db.execute("SELECT 1 FROM departments WHERE name = ?", (old,)).fetchone():
+            if db.execute("SELECT 1 FROM departments WHERE name = ?", (new,)).fetchone():
+                db.execute("DELETE FROM departments WHERE name = ?", (old,))
+            else:
+                db.execute("UPDATE departments SET name = ? WHERE name = ?", (new, old))
+        for table in ("users", "assets"):
+            db.execute(f"UPDATE {table} SET department = ? WHERE lower(department) = lower(?)", (new, old))
+    for i, (grp, name, parent, skip) in enumerate(DEFAULT_DEPARTMENTS):
+        db.execute("INSERT INTO departments (name, grp, parent, skip_approval, sort) VALUES (?, ?, ?, ?, ?) "
+                   "ON CONFLICT(name) DO UPDATE SET grp = excluded.grp, parent = excluded.parent, "
+                   "skip_approval = excluded.skip_approval, sort = excluded.sort", (name, grp, parent, skip, i))
+    db.execute("INSERT INTO settings (key, value) VALUES ('departments_version', '2')")
 
 
 def migrate(db):
@@ -418,7 +489,21 @@ def active_announcements():
 
 
 def departments():
-    return [r["name"] for r in get_db().execute("SELECT name FROM departments WHERE active = 1 ORDER BY name")]
+    return [r["name"] for r in get_db().execute("SELECT name FROM departments WHERE active = 1 ORDER BY sort, name")]
+
+
+def departments_grouped():
+    """[(group, [names])] in the order of DEPARTMENT_GROUPS, for <optgroup> lists."""
+    rows = get_db().execute("SELECT name, grp FROM departments WHERE active = 1 ORDER BY sort, name").fetchall()
+    order = {g: i for i, g in enumerate(DEPARTMENT_GROUPS)}
+    groups = {}
+    for r in rows:
+        groups.setdefault(r["grp"] or "Other", []).append(r["name"])
+    return sorted(groups.items(), key=lambda kv: order.get(kv[0], len(order)))
+
+
+def department_row(name):
+    return get_db().execute("SELECT * FROM departments WHERE lower(name) = lower(?)", (name or "",)).fetchone()
 
 
 app.jinja_env.globals.update(
@@ -426,7 +511,7 @@ app.jinja_env.globals.update(
     APPROVER_TITLES=APPROVER_TITLES, STAGES=STAGES,
     ASSET_TYPES=ASSET_TYPES, ASSET_STATUSES=ASSET_STATUSES, FREQUENCIES=FREQUENCIES, LEVELS=LEVELS,
     is_it=is_it, is_admin=is_admin, unread_count=unread_count, approvals_count=approvals_count,
-    active_announcements=active_announcements, departments=departments,
+    active_announcements=active_announcements, departments=departments, departments_grouped=departments_grouped,
     now_year=lambda: date.today().year, today=lambda: date.today().isoformat(),
     sidebar_side=lambda: get_setting("sidebar_side"),
     approver_short=lambda title: "Registrar" if title == "registrar" else APPROVER_TITLES.get(title, ""),
@@ -714,14 +799,21 @@ def it_recipients(ticket):
     return it_team_ids()
 
 
-def department_approvers(department, exclude_id=None):
-    """(primary, coordinators) user ids for a department."""
+def department_approvers(department, exclude_id=None, _seen=None):
+    """(primary, coordinators) user ids for a department or office. A section
+    without its own head falls back to its parent office (e.g. Store Section ->
+    Registrar, a department without chairman/coordinator -> Dean's office)."""
     rows = get_db().execute(
         "SELECT id, approver_title FROM users WHERE active = 1 AND approved = 1 AND approver_title != '' "
         "AND department != '' AND lower(department) = lower(?) AND id IS NOT ?",
         (department or "", exclude_id)).fetchall()
-    primary = [r["id"] for r in rows if r["approver_title"] in PRIMARY_TITLES]
+    primary = [r["id"] for r in rows if r["approver_title"] in (*PRIMARY_TITLES, "registrar")]
     coordinators = [r["id"] for r in rows if r["approver_title"] == "coordinator"]
+    if not primary and not coordinators:
+        dept = department_row(department)
+        seen = (_seen or set()) | {(department or "").lower()}
+        if dept is not None and dept["parent"] and dept["parent"].lower() not in seen:
+            return department_approvers(dept["parent"], exclude_id, seen)
     return primary, coordinators
 
 
@@ -752,6 +844,9 @@ def stage_approver_ids(t, requester=None):
 def needs_department_approval(requester):
     """The department's top approver does not need anyone's approval."""
     if is_it(requester) or requester["approver_title"] in (*PRIMARY_TITLES, "registrar"):
+        return False
+    dept = department_row(requester["department"])
+    if dept is not None and dept["skip_approval"]:
         return False
     if requester["approver_title"] == "coordinator":
         primary, _c = department_approvers(requester["department"], requester["id"])
@@ -1371,11 +1466,14 @@ def load_ticket(ticket_id):
     if (g.user["is_approver"] and t["requester_dept"]
             and t["requester_dept"].lower() == g.user["department"].lower()):
         return t  # department heads can view their department's requests
-    if g.user["approver_title"] == "registrar" and (
-            t["approval_stage"] == "registrar"
-            or get_db().execute("SELECT 1 FROM approvals WHERE ticket_id = ? AND stage = 'registrar'",
-                                (t["id"],)).fetchone()):
-        return t  # the Registrar sees purchase requests that reached them
+    if g.user["is_approver"]:
+        # Whoever the request is waiting on (including a parent office such as the
+        # Registrar or a Dean), and anyone who already decided on it, can open it.
+        if t["status"] == "pending_approval" and g.user["id"] in stage_approver_ids(t):
+            return t
+        if get_db().execute("SELECT 1 FROM approvals WHERE ticket_id = ? AND user_id = ?",
+                            (t["id"], g.user["id"])).fetchone():
+            return t
     abort(403)
 
 
@@ -1440,7 +1538,8 @@ def ticket_approve(ticket_id):
                 "approved" if decision == "approve" else "rejected", comment, g.user["signature_stored"],
                 upload[0], upload[1], ts))
     category = db.execute("SELECT * FROM categories WHERE id = ?", (t["category_id"],)).fetchone()
-    if decision == "approve" and stage == "department" and category and category["needs_registrar"]:
+    if (decision == "approve" and stage == "department" and category and category["needs_registrar"]
+            and g.user["approver_title"] != "registrar"):
         # Chairman approved a new purchase: the Registrar gives the final approval.
         db.execute("UPDATE tickets SET approval_stage = 'registrar', escalated_at = NULL, updated_at = ? WHERE id = ?",
                    (ts, ticket_id))
@@ -2114,9 +2213,14 @@ def admin_departments():
         f = request.form
         if f.get("toggle", "").isdigit():
             db.execute("UPDATE departments SET active = 1 - active WHERE id = ?", (int(f["toggle"]),))
+        elif f.get("skip", "").isdigit():
+            db.execute("UPDATE departments SET skip_approval = 1 - skip_approval WHERE id = ?", (int(f["skip"]),))
         elif f.get("name", "").strip():
+            grp = f.get("grp") if f.get("grp") in DEPARTMENT_GROUPS else "Other"
+            parent = f.get("parent", "").strip()
             try:
-                db.execute("INSERT INTO departments (name) VALUES (?)", (f["name"].strip(),))
+                db.execute("INSERT INTO departments (name, grp, parent, sort) VALUES (?, ?, ?, "
+                           "(SELECT COALESCE(MAX(sort), 0) + 1 FROM departments))", (f["name"].strip(), grp, parent))
                 flash(_("Department added."), "success")
             except sqlite3.IntegrityError:
                 flash(_("That department already exists."), "error")
@@ -2127,8 +2231,10 @@ def admin_departments():
         "(SELECT group_concat(u.name || ' (' || CASE u.approver_title WHEN 'coordinator' THEN 'Coordinator' "
         "WHEN 'head' THEN 'Head of office' WHEN 'registrar' THEN 'Registrar' ELSE 'Chairman' END || ')', ', ') FROM users u "
         "WHERE u.is_approver = 1 AND u.active = 1 "
-        " AND lower(u.department) = lower(d.name)) AS heads FROM departments d ORDER BY d.name").fetchall()
-    return render_template("admin/departments.html", rows=rows)
+        " AND lower(u.department) = lower(d.name)) AS heads FROM departments d ORDER BY d.sort, d.name").fetchall()
+    order = {g: i for i, g in enumerate(DEPARTMENT_GROUPS)}
+    rows = sorted(rows, key=lambda r: (order.get(r["grp"], len(order)), r["sort"], r["name"]))
+    return render_template("admin/departments.html", rows=rows, groups=DEPARTMENT_GROUPS)
 
 
 @app.route("/admin/categories", methods=["GET", "POST"])

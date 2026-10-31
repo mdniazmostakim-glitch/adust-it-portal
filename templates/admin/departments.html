@@ -2,23 +2,31 @@
 {% block content %}
 <h1>{{ _('Departments & offices') }}</h1>
 <div class="card">
-  <form method="post" class="filters">
+  <form method="post" class="grid">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input name="name" required placeholder="{{ _('New department or office name') }}">
-    <button class="btn primary">{{ _('Add') }}</button>
+    <label>{{ _('Name') }} * <input name="name" required placeholder="{{ _('New department or office name') }}"></label>
+    <label>{{ _('Group') }} <select name="grp">{% for g in groups %}<option value="{{ g }}">{{ _(g) }}</option>{% endfor %}</select></label>
+    <label>{{ _('Parent office (approval fallback)') }}
+      <select name="parent"><option value="">—</option>{% for d in rows %}<option>{{ d.name }}</option>{% endfor %}</select></label>
+    <div class="grid-end"><button class="btn primary">{{ _('Add') }}</button></div>
   </form>
-  <p class="hint">{{ _('To set the Chairman or Coordinator of a department, edit the user and choose an "Approval role".') }}</p>
+  <p class="hint">{{ _('Approvals go to the Chairman / Head of office of the requester\'s department or office (Coordinator if there is no chairman). If nobody is set there, they go to the parent office, e.g. Store Section → Registrar, a department → its Dean\'s office. Set approvers by editing the user and choosing an "Approval role".') }}</p>
 </div>
 <div class="card">
   <table>
-    <thead><tr><th>{{ _('Department / Office') }}</th><th>{{ _('People') }}</th><th>{{ _('Department head (approver)') }}</th><th>{{ _('Status') }}</th><th></th></tr></thead>
+    <thead><tr><th>{{ _('Department / Office') }}</th><th>{{ _('Parent office') }}</th><th>{{ _('People') }}</th><th>{{ _('Approvers') }}</th><th>{{ _('Status') }}</th><th></th></tr></thead>
     <tbody>
+    {% set ns = namespace(grp=None) %}
     {% for d in rows %}
+    {% if d.grp != ns.grp %}{% set ns.grp = d.grp %}<tr class="group-row"><td colspan="6">{{ _(d.grp) }}</td></tr>{% endif %}
     <tr class="{{ '' if d.active else 'inactive' }}">
-      <td data-label="{{ _('Department') }}">{{ d.name }}</td><td data-label="{{ _('People') }}">{{ d.people }}</td>
-      <td data-label="{{ _('Head') }}">{{ d.heads or '—' }}</td>
+      <td data-label="{{ _('Department') }}">{{ d.name }}{% if d.skip_approval %} <span class="badge st-resolved">{{ _('No approval needed') }}</span>{% endif %}</td>
+      <td data-label="{{ _('Parent office') }}"><small class="muted">{{ d.parent or '—' }}</small></td>
+      <td data-label="{{ _('People') }}">{{ d.people }}</td>
+      <td data-label="{{ _('Approvers') }}">{{ d.heads or '—' }}</td>
       <td data-label="{{ _('Status') }}">{{ _('Active') if d.active else _('Hidden') }}</td>
-      <td><form method="post" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <td class="actions"><form method="post" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn small" name="skip" value="{{ d.id }}" title="{{ _('Requests from this office need no department approval') }}">{{ _('Require approval') if d.skip_approval else _('No approval needed') }}</button>
         <button class="btn small" name="toggle" value="{{ d.id }}">{{ _('Hide') if d.active else _('Show') }}</button></form></td>
     </tr>
     {% endfor %}

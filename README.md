@@ -26,7 +26,15 @@ works in **English and Bangla**, and runs on a single small server (Python + SQL
 | **Backups** | Daily automatic zip of database + uploaded files (kept 14 days), plus "Create backup now" and download in *Admin → Backups*. |
 | **Bangla / English** | Switch with one click in the header; remembered per user. |
 
-Roles: **Requester** (staff/faculty), **IT staff**, **IT admin** (IT staff + manages the portal). Any user can also be marked **Department head** (approver).
+Roles: **Requester** (staff/faculty), **IT staff**, **IT admin** (IT staff + manages the portal). Any user can also have an
+**approval role**: Chairman, Head of office / Dean, Coordinator or Registrar.
+
+**University structure** (from adust.edu.bd) is built in and grouped in every department list: Board of Trustees and
+Vice-Chancellor, the offices of the Treasurer, Registrar (with its HR, Admission, Public Relation, Support Service,
+Academic Affairs, IT, Design and Store sections), Controller of Examinations and Proctor, IQAC, ARIC, Library,
+Transport, and the five faculties with their Dean's offices and 14 departments. Each department/office can have a
+*parent office*: if nobody there has an approval role, approvals go to the parent (Store Section → Registrar,
+Civil Engineering → Dean of FET). Admins can add, hide or regroup entries in *Admin → Departments*.
 
 ## Quick start (try it)
 

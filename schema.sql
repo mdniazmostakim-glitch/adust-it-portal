@@ -22,6 +22,10 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS departments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    grp TEXT NOT NULL DEFAULT 'Other',           -- heading in the department list (faculty, offices, ...)
+    parent TEXT NOT NULL DEFAULT '',             -- approvals fall back to this office when no head is set here
+    skip_approval INTEGER NOT NULL DEFAULT 0,    -- top offices (BoT, VC) need no department approval
+    sort INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1
 );
 

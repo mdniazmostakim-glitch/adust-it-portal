@@ -127,7 +127,7 @@ ok(post(u, "/tickets/new", {"title": "x", "category_id": "1", "priority": "5", "
 print("urgent+sms ok")
 
 # ---------- approval flow (category 13 = New equipment / Purchase): chairman -> Registrar -> IT
-post(admin, "/admin/users", {"name": "Registrar Sir", "email": "registrar@adust.edu.bd", "role": "user", "department": "Registrar Office", "approver_title": "registrar", "password": "registrar1"})
+post(admin, "/admin/users", {"name": "Registrar Sir", "email": "registrar@adust.edu.bd", "role": "user", "department": "Office of the Registrar", "approver_title": "registrar", "password": "registrar1"})
 reg = client(); login(reg, "registrar@adust.edu.bd", "registrar1")
 png = (b"\x89PNG\r\n\x1a\n" + b"0" * 64)
 ok(post(reg, "/profile", {"action": "signature", "signature": (io.BytesIO(png), "sig.png")}, content_type="multipart/form-data"), "Signature saved")
@@ -210,6 +210,39 @@ post(u, "/tickets/new", {"title": "Keyboard keys stuck", "category_id": "1", "pr
 assert [r[0] for r in q("SELECT status FROM tickets WHERE title IN ('Registrar asks for a scanner', 'Keyboard keys stuck')")] == ["new", "new"]
 ok(admin.get("/admin/departments"), "Dr. Head CSE (Chairman)", "CSE Coordinator (Coordinator)")
 print("chairman/coordinator routing ok")
+
+# ---------- university offices from adust.edu.bd: parent-office fallback, office heads, BoT
+FET_DEAN = "Dean's Office — Faculty of Engineering & Technology"
+ok(admin.get("/admin/departments"), "Registrar Office — Store Section", "Office of the Controller of Examinations",
+   "Board of Trustees (BoT)", "Robotics and Automation Engineering", "Faculty of Health Science")
+ok(admin.get("/admin/users"), '<optgroup label="Faculty of Engineering &amp; Technology">')
+for n, e, dep, title in [("Store Officer", "store@adust.edu.bd", "Registrar Office — Store Section", ""),
+                       ("FET Dean", "dean.fet@adust.edu.bd", FET_DEAN, "head"),
+                       ("Civil Teacher", "civil@adust.edu.bd", "Civil Engineering", ""),
+                       ("Controller", "controller@adust.edu.bd", "Office of the Controller of Examinations", "head"),
+                       ("Exam Staff", "exam@adust.edu.bd", "Office of the Controller of Examinations", ""),
+                       ("BoT Member", "bot@adust.edu.bd", "Board of Trustees (BoT)", "")]:
+    post(admin, "/admin/users", {"name": n, "email": e, "role": "user", "department": dep, "approver_title": title, "password": "officepass1"})
+def office(email):
+    c = client(); login(c, email, "officepass1"); return c
+store, dean, civil, ctrl, exam, bot = (office(e) for e in ["store@adust.edu.bd", "dean.fet@adust.edu.bd", "civil@adust.edu.bd",
+                                                            "controller@adust.edu.bd", "exam@adust.edu.bd", "bot@adust.edu.bd"])
+s1 = new_purchase(store, "Store needs a barcode printer")              # no head in Store Section -> Registrar (parent)
+ok(store.get(f"/tickets/{s1}"), "Waiting for approval from", "Registrar Sir")
+ok(post(reg, f"/tickets/{s1}/approve", {"decision": "approve"}), "approved and sent")   # registrar = final, no 2nd step
+assert q("SELECT status FROM tickets WHERE id=?", s1)[0][0] == "new"
+s2 = new_purchase(civil, "Civil lab needs a total station")            # no chairman/coordinator -> Dean of FET
+ok(civil.get(f"/tickets/{s2}"), "FET Dean")
+ok(post(dean, f"/tickets/{s2}/approve", {"decision": "approve"}), "goes to the Registrar")
+s3 = new_purchase(exam, "Exam office needs a scanner")                 # Controller (head of office) -> Registrar
+ok(exam.get(f"/tickets/{s3}"), "Controller")
+assert reg.post(f"/tickets/{s3}/approve", data={"csrf_token": tok(reg), "decision": "approve"}).status_code == 403
+ok(post(ctrl, f"/tickets/{s3}/approve", {"decision": "approve"}), "goes to the Registrar")
+s4 = new_purchase(bot, "BoT meeting room display")                     # BoT: no department approval -> Registrar
+assert q("SELECT approval_stage FROM tickets WHERE id=?", s4)[0][0] == "registrar"
+for k in (s2, s3, s4):
+    ok(post(reg, f"/tickets/{k}/approve", {"decision": "approve"}), "approved and sent")
+print("university offices ok")
 
 # ---------- IT workflow, first response, rating
 t1 = q("SELECT id FROM tickets WHERE title='Lab PC not booting'")[0][0]

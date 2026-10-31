@@ -12,7 +12,7 @@
   <input type="search" name="q" placeholder="{{ _('Search tag, model, serial, location, user…') }}" value="{{ request.args.q }}">
   <select name="type"><option value="">{{ _('All types') }}</option>{% for t in ASSET_TYPES %}<option {{ 'selected' if request.args.type == t }}>{{ t }}</option>{% endfor %}</select>
   <select name="status"><option value="">{{ _('Any status') }}</option>{% for k, v in ASSET_STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if request.args.status == k }}>{{ _(v) }}</option>{% endfor %}</select>
-  <select name="department"><option value="">{{ _('All departments') }}</option>{% for d in departments() %}<option {{ 'selected' if request.args.department == d }}>{{ d }}</option>{% endfor %}</select>
+  <select name="department"><option value="">{{ _('All departments') }}</option>{% for grp, names in departments_grouped() %}<optgroup label="{{ _(grp) }}">{% for d in names %}<option {{ 'selected' if request.args.department == d }}>{{ d }}</option>{% endfor %}</optgroup>{% endfor %}</select>
   <button class="btn">{{ _('Filter') }}</button>
 </form>
 <div class="card">
