@@ -53,32 +53,40 @@ flask --app app run --host 0.0.0.0
 5. Double-click `windows\start-portal.bat` every time you want to run the portal.
 6. New version: stop the portal, download the new ZIP to Downloads, double-click `windows\update-portal.bat`.
 
-## Deploy on the university server (Ubuntu)
+## Deploy on the university server
+
+### Ubuntu / Debian server (recommended)
+
+Copy the ZIP to the server, then:
 
 ```bash
-sudo apt install python3-venv nginx
-sudo mkdir -p /opt/adust-it-portal /var/lib/adust-it-portal/uploads /var/lib/adust-it-portal/backups
-sudo cp -r . /opt/adust-it-portal && cd /opt/adust-it-portal
-sudo python3 -m venv venv && sudo venv/bin/pip install -r requirements.txt
-sudo cp deploy/portal.env.example /etc/adust-it-portal.env   # then edit it
-sudo chown -R www-data:www-data /var/lib/adust-it-portal
-sudo -u www-data bash -c 'set -a; . /etc/adust-it-portal.env; venv/bin/flask --app app create-admin'
-sudo cp deploy/adust-it-portal.service deploy/adust-it-portal-housekeeping.* /etc/systemd/system/
-sudo systemctl enable --now adust-it-portal adust-it-portal-housekeeping.timer
-sudo cp deploy/nginx.conf /etc/nginx/sites-available/adust-it-portal
-sudo ln -s /etc/nginx/sites-available/adust-it-portal /etc/nginx/sites-enabled/ && sudo systemctl reload nginx
+unzip adust-it-portal-LIVE-*.zip && cd adust-it-portal
+sudo bash deploy/install.sh
 ```
+
+The script installs Python and nginx, copies the app to `/opt/adust-it-portal`, keeps data in
+`/var/lib/adust-it-portal`, writes `/etc/adust-it-portal.env` with a random secret key, sets up the
+systemd service and the nightly reminders/backup timer, configures nginx and asks for the first
+IT admin. **To update later, unzip the new version and run the same command** — data and settings are kept.
+
+Then edit `/etc/adust-it-portal.env` for email (SMTP), SMS and allowed networks, and run
+`sudo systemctl restart adust-it-portal`.
+
+### Windows server
+
+Install Python, unzip to e.g. `D:\adust-it-portal`, check the settings at the top of
+`windows\start-portal.ps1`, run `windows\allow-firewall.bat` as administrator and
+`windows\create-admin.bat` once, then `windows\start-portal.bat`. It runs the portal with
+**waitress** (a production server) and creates a random secret key on first start. Use Task
+Scheduler ("At startup") to start `start-portal.bat` automatically.
 
 Then, from a campus PC:
 
 1. Sign in as admin → **Admin → Network access**: check the IP the server sees and add the campus ranges.
 2. **Admin → Settings**: check the system status, send a test email / SMS.
-3. **Admin → Users**: add IT staff; tick *Department head* for heads of departments.
+3. **Admin → Users**: add IT staff; set approval roles (Chairman, Coordinator, Head of office / Dean, Registrar).
 4. **Admin → Categories**: choose which categories need approval.
 5. **IT → Devices**: import your device list (CSV template provided).
-
-Reminders and backups also run on their own when people use the portal; the systemd timer
-makes sure they run at night too.
 
 ### Keeping the data safe (backup & restore)
 

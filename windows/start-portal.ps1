@@ -1,4 +1,4 @@
-# ADUST IT Section Portal - start on a Windows PC (for testing).
+# ADUST IT Section Portal - run on a Windows PC or Windows server.
 #
 # Usage (from PowerShell, or double-click start-portal.bat):
 #   .\windows\start-portal.ps1               start the portal
@@ -14,7 +14,7 @@ $DataDir    = "C:\ADUST-IT-Data"                  # live database + files (local
 $BackupCopy = "G:\My Drive\ADUST-IT-Backups"      # second backup copy (Google Drive / USB / other disk); "" = none
 $Networks   = "172.20.0.0/16,172.16.0.0/24"       # campus networks allowed to open the portal (comma-separated)
 $Port       = 5000
-$SecretKey  = "adust-test-secret-change-later-12345"
+$SecretKey  = ""                                  # "" = a random key is created once and kept in $DataDir\secret.key
 # Email (optional): fill these to send email notifications and password resets
 $SmtpHost   = ""                                  # e.g. smtp.gmail.com
 $SmtpUser   = ""                                  # e.g. adust.it.portal@gmail.com
@@ -26,12 +26,15 @@ $App = Split-Path -Parent $PSScriptRoot           # the folder that contains app
 Set-Location $App
 if (-not (Test-Path "$App\app.py")) { Write-Host "app.py not found in $App" -ForegroundColor Red; exit 1 }
 
-# 1. Python environment (created once)
+# 1. Python environment (created once; packages refreshed when a new version needs them)
 if (-not (Test-Path "$App\venv\Scripts\python.exe")) {
     Write-Host "Creating Python environment (first run only)..." -ForegroundColor Cyan
     py -m venv venv
     & "$App\venv\Scripts\python.exe" -m pip install --upgrade pip
     & "$App\venv\Scripts\pip.exe" install -r requirements.txt
+}
+if (-not (Test-Path "$App\venv\Scripts\waitress-serve.exe")) {
+    & "$App\venv\Scripts\pip.exe" install -q -r requirements.txt
 }
 
 # 2. Data folders; move existing test data from the app folder on first run
@@ -43,6 +46,15 @@ if (-not (Test-Path "$DataDir\portal.db") -and (Test-Path "$App\portal.db")) {
 }
 
 # 3. Settings for the portal
+if (-not $SecretKey) {
+    $keyFile = "$DataDir\secret.key"
+    if (-not (Test-Path $keyFile)) {
+        $bytes = New-Object byte[] 32
+        [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+        ($bytes | ForEach-Object { $_.ToString("x2") }) -join "" | Set-Content -NoNewline $keyFile
+    }
+    $SecretKey = (Get-Content $keyFile -Raw).Trim()
+}
 $env:PORTAL_SECRET_KEY       = $SecretKey
 $env:PORTAL_ALLOWED_NETWORKS = $Networks
 $env:PORTAL_DATABASE         = "$DataDir\portal.db"
@@ -64,7 +76,7 @@ if ($ResetPassword) {
     exit
 }
 
-$ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -like "172.20.*" } | Select-Object -First 1).IPAddress
+$ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -like "172.*" } | Select-Object -First 1).IPAddress
 Write-Host ""
 Write-Host "ADUST IT Portal is starting..." -ForegroundColor Green
 Write-Host "  On this PC:        http://127.0.0.1:$Port"
@@ -72,4 +84,5 @@ if ($ip) { Write-Host "  From campus PCs:   http://${ip}:$Port" }
 Write-Host "  Data folder:       $DataDir"
 Write-Host "  Keep this window open. Press Ctrl+C to stop."
 Write-Host ""
-& $Flask --app app run --host 0.0.0.0 --port $Port
+# waitress is a production web server (flask run is only for development)
+& "$App\venv\Scripts\waitress-serve.exe" --listen="0.0.0.0:$Port" --threads=8 app:app
