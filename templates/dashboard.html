@@ -28,6 +28,122 @@
   <a class="stat {{ 'alert' if stats.to_confirm }}" href="{{ url_for('ticket_list', status='resolved') }}"><b>{{ stats.to_confirm }}</b><span>{{ _('Done — please confirm') }}</span></a>
   {% endif %}
 </div>
+
+{% if dash %}
+{% set d = dash %}
+<div class="dash-filters">
+  <span class="muted">{{ _('Period') }}:</span>
+  {% for k, label in [('7', 'Last 7 days'), ('30', 'Last 30 days'), ('90', 'Last 90 days'), ('all', 'All time')] %}
+  <a class="chip {{ 'on' if d.range == k }}" href="{{ url_for('index', range=k) }}">{{ _(label) }}</a>
+  {% endfor %}
+  <span class="dash-summary">
+    <b>{{ d.summary.total }}</b> {{ _('requests') }} ·
+    {{ _('first response') }} <b>{{ d.summary.response if d.summary.response is not none else '—' }}</b> h ·
+    {{ _('resolve') }} <b>{{ d.summary.resolve if d.summary.resolve is not none else '—' }}</b> h ·
+    {{ _('rating') }} <b>{{ d.summary.rating or '—' }}</b>{% if d.summary.rating %} ★{% endif %}
+  </span>
+</div>
+
+<div class="card viz">
+  <div class="row-between">
+    <h2>{{ _('Requests by category') }}</h2>
+    <div class="legend">
+      <span><i class="sw s1"></i>{{ _('Open') }}</span>
+      <span><i class="sw s2"></i>{{ _('Waiting for approval') }}</span>
+      <span><i class="sw s3"></i>{{ _('Resolved / closed') }}</span>
+    </div>
+  </div>
+  {% if d.categories %}
+  <div class="hbars">
+    {% for c in d.categories %}
+    <a class="hbar-row" href="{{ url_for('ticket_list', status='all', category=c.id) if c.id else url_for('ticket_list', status='all') }}" tabindex="0"
+       data-title="{{ c.name }}" data-tip="{{ _('Open') }}: {{ c.open or 0 }};;{{ _('Waiting for approval') }}: {{ c.waiting or 0 }};;{{ _('Resolved / closed') }}: {{ c.done or 0 }}">
+      <span class="hbar-label">{{ c.name }}</span>
+      <span class="hbar-track">
+        {% for v, cls in [(c.open, 's1'), (c.waiting, 's2'), (c.done, 's3')] %}{% if v %}<i class="seg {{ cls }}" style="width: {{ (100 * v / d.max_cat)|round(2) }}%"></i>{% endif %}{% endfor %}
+        <b class="hbar-val">{{ c.total }}</b>
+      </span>
+    </a>
+    {% endfor %}
+  </div>
+  <details class="table-view"><summary>{{ _('Show as table') }}</summary>
+    <table><thead><tr><th>{{ _('Category') }}</th><th class="num">{{ _('Open') }}</th><th class="num">{{ _('Waiting for approval') }}</th><th class="num">{{ _('Resolved / closed') }}</th><th class="num">{{ _('Total') }}</th></tr></thead>
+    <tbody>{% for c in d.categories %}<tr><td>{{ c.name }}</td><td class="num">{{ c.open or 0 }}</td><td class="num">{{ c.waiting or 0 }}</td><td class="num">{{ c.done or 0 }}</td><td class="num">{{ c.total }}</td></tr>{% endfor %}</tbody></table>
+  </details>
+  {% else %}<p class="muted">{{ _('No requests in this period.') }}</p>{% endif %}
+</div>
+
+<div class="dash-grid">
+  <div class="card viz">
+    <h2>{{ _('Requests per month') if d.per_month else _('Requests per day') }}</h2>
+    <div class="vbars" style="--n: {{ d.series|length }}">
+      {% for s in d.series %}
+      <span class="vbar" tabindex="0" data-title="{{ s.label }}" data-tip="{{ _('Requests') }}: {{ s.n }};;{{ _('Resolved / closed') }}: {{ s.done }}">
+        <i style="height: {{ (100 * s.n / d.max_day)|round(2) }}%"></i>
+      </span>
+      {% endfor %}
+    </div>
+    <div class="vbar-axis"><span>{{ d.series[0].label }}</span><span class="muted">{{ _('max') }} {{ d.max_day }}</span><span>{{ d.series[-1].label }}</span></div>
+  </div>
+
+  <div class="card viz">
+    <div class="row-between">
+      <h2>{{ _('IT staff workload') }}</h2>
+      <div class="legend"><span><i class="sw s1"></i>{{ _('Open now') }}</span><span><i class="sw s3"></i>{{ _('Done in period') }}</span></div>
+    </div>
+    <div class="hbars compact">
+      {% for s in d.staff %}
+      <a class="hbar-row" href="{{ url_for('ticket_list', assigned=s.id) }}" tabindex="0"
+         data-title="{{ s.name }}" data-tip="{{ _('Open now') }}: {{ s.open }};;{{ _('Done in period') }}: {{ s.done }}">
+        <span class="hbar-label">{{ s.name }}</span>
+        <span class="hbar-track">
+          {% if s.open %}<i class="seg s1" style="width: {{ (100 * s.open / d.max_staff)|round(2) }}%"></i>{% endif %}{% if s.done %}<i class="seg s3" style="width: {{ (100 * s.done / d.max_staff)|round(2) }}%"></i>{% endif %}
+          <b class="hbar-val">{{ s.open }} / {{ s.done }}</b>
+        </span>
+      </a>
+      {% endfor %}
+      <a class="hbar-row" href="{{ url_for('ticket_list', assigned='none') }}" tabindex="0" data-title="{{ _('Unassigned') }}" data-tip="{{ _('Open now') }}: {{ d.unassigned }}">
+        <span class="hbar-label"><em>{{ _('Unassigned') }}</em></span>
+        <span class="hbar-track">{% if d.unassigned %}<i class="seg s1" style="width: {{ (100 * d.unassigned / d.max_staff)|round(2) }}%"></i>{% endif %}<b class="hbar-val">{{ d.unassigned }}</b></span>
+      </a>
+    </div>
+  </div>
+
+  <div class="card viz">
+    <h2>{{ _('Top requesting departments') }}</h2>
+    {% if d.departments %}
+    <div class="hbars compact">
+      {% for x in d.departments %}
+      <span class="hbar-row" tabindex="0" data-title="{{ x.dept }}" data-tip="{{ _('Requests') }}: {{ x.n }}">
+        <span class="hbar-label">{{ x.dept }}</span>
+        <span class="hbar-track"><i class="seg s1" style="width: {{ (100 * x.n / d.max_dept)|round(2) }}%"></i><b class="hbar-val">{{ x.n }}</b></span>
+      </span>
+      {% endfor %}
+    </div>
+    {% else %}<p class="muted">{{ _('No requests in this period.') }}</p>{% endif %}
+  </div>
+</div>
+<div class="viz-tip" id="viz-tip" role="tooltip" hidden></div>
+<script>
+(function () {
+  var tip = document.getElementById('viz-tip');
+  function show(el, x, y) {
+    tip.textContent = '';                       // built from text nodes: names can never inject markup
+    var t = document.createElement('strong'); t.textContent = el.getAttribute('data-title') || ''; tip.appendChild(t);
+    (el.getAttribute('data-tip') || '').split(';;').forEach(function (line) {
+      if (!line) return; tip.appendChild(document.createElement('br')); tip.appendChild(document.createTextNode(line)); });
+    tip.hidden = false;
+    var w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.min(window.innerWidth - w - 12, x + 14) + 'px'; tip.style.top = Math.max(8, y - h - 12) + 'px'; }
+  document.querySelectorAll('[data-tip]').forEach(function (el) {
+    el.addEventListener('mousemove', function (e) { show(el, e.clientX, e.clientY); });
+    el.addEventListener('mouseleave', function () { tip.hidden = true; });
+    el.addEventListener('focus', function () { var r = el.getBoundingClientRect(); show(el, r.left + r.width / 2, r.top); });
+    el.addEventListener('blur', function () { tip.hidden = true; });
+  });
+})();
+</script>
+{% endif %}
 <div class="card">
   <div class="row-between"><h2>{{ _('Open work queue') if is_it() else _('My active requests') }}</h2><a href="{{ url_for('ticket_list', status='all') }}">{{ _('View all') }} →</a></div>
   {{ ticket_table(tickets, show_requester=is_it()) }}

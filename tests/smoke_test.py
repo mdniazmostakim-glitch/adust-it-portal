@@ -262,6 +262,20 @@ assert q("SELECT rating FROM tickets WHERE id=?", t1)[0][0] == 4
 ok(it.get(f"/tickets/{t1}/print"), "Job card", "Technician signature", "Lab PC not booting")
 print("workflow+rating ok")
 
+# ---------- IT dashboard charts
+post(admin, "/admin/categories", {"name": "<img src=x onerror=alert(1)>"})
+evil = q("SELECT id FROM categories WHERE name LIKE '<img%'")[0][0]
+post(u, "/tickets/new", {"title": "xss check", "category_id": str(evil), "priority": "5", "description": "x"}, content_type="multipart/form-data")
+for rng in ("7", "30", "90", "all"):
+    page = ok(admin.get(f"/?range={rng}"), "Requests by category", "IT staff workload", "Top requesting departments", "Show as table")
+    assert b"<img src=x" not in page.data
+ok(admin.get("/?range=all"), "Hardware / Computer", "Requests per month")
+assert b"Requests by category" not in u.get("/").data                    # requesters keep the simple dashboard
+with app.test_request_context("/?range=all"):
+    depts = [r["dept"] for r in A.it_dashboard_data()["departments"]]
+assert len(depts) == len(set(depts)), depts                               # one row per department, not per person
+print("dashboard charts ok")
+
 # ---------- housekeeping: escalation, overdue, auto-close, approval reminder, recurring, backup
 with app.app_context():
     db = A.get_db()

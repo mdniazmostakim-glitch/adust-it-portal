@@ -1232,7 +1232,68 @@ def index():
     status_scope = OPEN_STATUSES if is_it() else (*OPEN_STATUSES, "pending_approval", "resolved")
     tickets = db.execute(
         f"{TICKET_SELECT} WHERE {scope} AND t.status IN {status_scope} {TICKET_ORDER} LIMIT 15", args).fetchall()
-    return render_template("dashboard.html", stats=stats, tickets=tickets, approvals=approvals_count())
+    return render_template("dashboard.html", stats=stats, tickets=tickets, approvals=approvals_count(),
+                           dash=it_dashboard_data() if is_it() else None)
+
+
+DASH_RANGES = {"7": 7, "30": 30, "90": 90, "all": None}
+
+
+def it_dashboard_data():
+    """Charts for the IT dashboard: requests per category (split by state),
+    requests per day, open work per IT staff and top departments."""
+    db = get_db()
+    key = request.args.get("range", "30")
+    key = key if key in DASH_RANGES else "30"
+    days = DASH_RANGES[key]
+    since = (date.today() - timedelta(days=days - 1)).isoformat() if days else "2000-01-01"
+    in_range = "t.created_at >= ?"
+    categories = db.execute(
+        f"SELECT COALESCE(c.name, '—') AS name, c.id AS id, "
+        f"SUM(t.status IN {OPEN_STATUSES}) AS open, SUM(t.status = 'pending_approval') AS waiting, "
+        f"SUM(t.status IN ('resolved','closed')) AS done, COUNT(*) AS total "
+        f"FROM tickets t LEFT JOIN categories c ON c.id = t.category_id "
+        f"WHERE {in_range} AND t.status NOT IN ('cancelled','rejected') GROUP BY c.id ORDER BY total DESC, name",
+        (since,)).fetchall()
+    max_cat = max([c["total"] for c in categories] or [1])
+    # Requests per day (per month for "all time")
+    if days:
+        rows = {r["d"]: r for r in db.execute(
+            "SELECT substr(created_at, 1, 10) AS d, COUNT(*) AS n, SUM(status IN ('resolved','closed')) AS done "
+            "FROM tickets WHERE created_at >= ? GROUP BY d", (since,))}
+        series = []
+        for i in range(days):
+            d = (date.fromisoformat(since) + timedelta(days=i)).isoformat()
+            r = rows.get(d)
+            series.append({"key": d, "label": date.fromisoformat(d).strftime("%d %b"), "n": r["n"] if r else 0,
+                           "done": (r["done"] or 0) if r else 0})
+    else:
+        series = [{"key": r["m"], "label": datetime.strptime(r["m"], "%Y-%m").strftime("%b %Y"), "n": r["n"],
+                   "done": r["done"] or 0}
+                  for r in db.execute("SELECT substr(created_at, 1, 7) AS m, COUNT(*) AS n, "
+                                      "SUM(status IN ('resolved','closed')) AS done FROM tickets "
+                                      "GROUP BY m ORDER BY m DESC LIMIT 12").fetchall()[::-1]]
+    max_day = max([s["n"] for s in series] or [1]) or 1
+    staff = db.execute(
+        f"SELECT u.id, u.name, (SELECT COUNT(*) FROM tickets t WHERE t.assigned_to = u.id AND t.status IN {OPEN_STATUSES}) AS open, "
+        f"(SELECT COUNT(*) FROM tickets t WHERE t.assigned_to = u.id AND t.status IN ('resolved','closed') AND {in_range}) AS done "
+        f"FROM users u WHERE u.role IN ('it','admin') AND u.active = 1 AND u.approved = 1 ORDER BY open DESC, done DESC, u.name",
+        (since,)).fetchall()
+    unassigned = db.execute(f"SELECT COUNT(*) FROM tickets WHERE assigned_to IS NULL AND status IN {OPEN_STATUSES}").fetchone()[0]
+    max_staff = max([s["open"] + s["done"] for s in staff] + [unassigned, 1])
+    departments = db.execute(
+        # Alias must not be "name": users.name would win in GROUP BY and split departments per person.
+        f"SELECT COALESCE(NULLIF(r.department, ''), '—') AS dept, COUNT(*) AS n FROM tickets t JOIN users r ON r.id = t.requester_id "
+        f"WHERE {in_range} GROUP BY dept ORDER BY n DESC LIMIT 6", (since,)).fetchall()
+    max_dept = max([d["n"] for d in departments] or [1])
+    hours = "(julianday({}) - julianday(t.created_at)) * 24"
+    summary = db.execute(
+        f"SELECT COUNT(*) AS total, ROUND(AVG({hours.format('t.first_response_at')}), 1) AS response, "
+        f"ROUND(AVG({hours.format('t.resolved_at')}), 1) AS resolve, ROUND(AVG(t.rating), 1) AS rating "
+        f"FROM tickets t WHERE {in_range}", (since,)).fetchone()
+    return dict(range=key, categories=categories, max_cat=max_cat, series=series, max_day=max_day,
+                per_month=not days, staff=staff, unassigned=unassigned, max_staff=max_staff,
+                departments=departments, max_dept=max_dept, summary=summary)
 
 
 def ticket_filters(q):
