@@ -3,15 +3,16 @@
 # Usage (from PowerShell, or double-click start-portal.bat):
 #   .\windows\start-portal.ps1               start the portal
 #   .\windows\start-portal.ps1 -CreateAdmin  create an IT admin account first
+#   .\windows\start-portal.ps1 -ResetPassword  set a new password for an account (also unlocks it)
 #
 # Edit the settings below once. Everything else is automatic.
 
-param([switch]$CreateAdmin)
+param([switch]$CreateAdmin, [switch]$ResetPassword)
 
 # ----------------------------------------------------------------- settings
 $DataDir    = "C:\ADUST-IT-Data"                  # live database + files (local disk, NOT Google Drive)
 $BackupCopy = "G:\My Drive\ADUST-IT-Backups"      # second backup copy (Google Drive / USB / other disk); "" = none
-$Networks   = "172.20.0.0/16"                     # campus network allowed to open the portal
+$Networks   = "172.20.0.0/16,172.16.0.0/24"       # campus networks allowed to open the portal (comma-separated)
 $Port       = 5000
 $SecretKey  = "adust-test-secret-change-later-12345"
 # Email (optional): fill these to send email notifications and password resets
@@ -56,6 +57,10 @@ if ($SmtpHost) {
 $Flask = "$App\venv\Scripts\flask.exe"
 if ($CreateAdmin) {
     & $Flask --app app create-admin
+    exit
+}
+if ($ResetPassword) {
+    & $Flask --app app reset-password
     exit
 }
 

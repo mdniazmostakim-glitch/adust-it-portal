@@ -82,6 +82,13 @@ for i in range(5): login(x, "mim@adust.edu.bd", "wrong")
 r = x.post("/login", data={"identifier": "mim@adust.edu.bd", "password": "secret123", "csrf_token": tok(x)})
 assert r.status_code == 429 and b"Too many failed attempts" in r.data
 print("lockout ok")
+r = app.test_cli_runner().invoke(args=["reset-password", "--user", "MIM@adust.edu.bd", "--password", "fresh12345"])
+assert "Password updated" in r.output, r.output                         # also clears the lock-out
+ok(login(client("10.20.0.77"), "mim@adust.edu.bd", "fresh12345"), "Welcome, Mim")
+assert "No account" in app.test_cli_runner().invoke(args=["reset-password", "--user", "nobody", "--password", "fresh12345"]).output
+post(client("10.20.0.77"), "/forgot", {"identifier": "x"})                # keep the rest of the test independent
+r = app.test_cli_runner().invoke(args=["reset-password", "--user", "mim@adust.edu.bd", "--password", "secret123"])
+print("reset-password command ok")
 
 # ---------- 2. password reset
 emails.clear()

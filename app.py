@@ -340,6 +340,26 @@ def create_admin_command(name, email, login_id, password):
     click.echo(f"Admin {email} created.")
 
 
+@app.cli.command("reset-password")
+@click.option("--user", "ident", prompt="Email or login ID")
+@click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True)
+def reset_password_command(ident, password):
+    """Set a new password for an account, unlock it and make sure it is active."""
+    init_db()
+    if len(password) < 8:
+        raise click.ClickException("Password must be at least 8 characters.")
+    db = get_db()
+    ident = ident.strip().lower()
+    cur = db.execute("UPDATE users SET password_hash = ?, active = 1, approved = 1 WHERE email = ? OR login_id = ?",
+                     (generate_password_hash(password), ident, ident))
+    db.execute("DELETE FROM login_attempts")
+    db.commit()
+    if cur.rowcount == 0:
+        names = ", ".join(f"{r['email']} ({r['login_id'] or '-'})" for r in db.execute("SELECT email, login_id FROM users"))
+        raise click.ClickException(f"No account '{ident}'. Accounts: {names}")
+    click.echo(f"Password updated for {ident}. You can sign in now.")
+
+
 @app.cli.command("allow-network")
 @click.argument("cidr")
 @click.option("--label", default="")
