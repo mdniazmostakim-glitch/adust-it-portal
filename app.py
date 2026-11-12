@@ -203,12 +203,54 @@ app.config.update(
     AUTO_HOUSEKEEPING=env("PORTAL_AUTO_HOUSEKEEPING", "1") == "1",
 )
 
+# On Vercel a crash at start-up only shows "FUNCTION_INVOCATION_FAILED", so a
+# missing setting or an unreachable database is reported on the page instead.
+STARTUP_PROBLEMS = []
 if ON_VERCEL and not IS_PG:
-    raise RuntimeError("On Vercel the portal needs a PostgreSQL database: set DATABASE_URL "
-                       "(e.g. the Neon connection string) in the project's Environment Variables.")
+    STARTUP_PROBLEMS.append("DATABASE_URL is not set (or does not start with postgresql://). "
+                            "Add the Neon connection string in Vercel: Project, Settings, Environment Variables.")
 if ON_VERCEL and not env("PORTAL_SECRET_KEY"):
     # Each serverless instance would make its own random key and sign-ins would keep dropping.
-    raise RuntimeError("On Vercel set PORTAL_SECRET_KEY (a long random string) in the project's Environment Variables.")
+    STARTUP_PROBLEMS.append("PORTAL_SECRET_KEY is not set. Add a long random string in the Environment Variables.")
+_db_ready = False
+_db_error = ""
+
+
+def _safe_error(exc):
+    text = f"{type(exc).__name__}: {str(exc).strip().splitlines()[0] if str(exc).strip() else ''}"
+    return re.sub(r"postgres(ql)?://\S+", "postgresql://***", text)[:300]
+
+
+def ensure_db():
+    global _db_ready, _db_error
+    if _db_ready:
+        return True
+    try:
+        with app.app_context():
+            init_db()
+        _db_ready, _db_error = True, ""
+    except Exception as exc:  # noqa: BLE001 - reported on the page, retried next request
+        if not ON_VERCEL:
+            raise
+        app.logger.exception("database initialisation failed")
+        _db_error = _safe_error(exc)
+    return _db_ready
+
+
+@app.before_request
+def startup_check():
+    if not ON_VERCEL:
+        return None
+    problems = list(STARTUP_PROBLEMS)
+    if not problems and not ensure_db():
+        problems.append("Cannot reach the database: " + _db_error +
+                        " (check DATABASE_URL: the Neon pooled connection string, with ?sslmode=require)")
+    if problems:
+        body = "ADUST IT Portal is not configured yet.\n\n" + "\n".join("- " + p for p in problems) + \
+               "\n\nAfter changing Environment Variables, redeploy the project (Deployments, ..., Redeploy)."
+        return app.response_class(body, status=503, mimetype="text/plain")
+    return None
+
 
 if env("PORTAL_TRUST_PROXY") == "1" or ON_VERCEL:
     # Behind nginx/Apache: trust one X-Forwarded-For hop for the client IP.
@@ -2948,8 +2990,8 @@ def http_error(err):
     return render_template("error.html", code=err.code, message=msg), err.code
 
 
-with app.app_context():
-    init_db()
+if not STARTUP_PROBLEMS:
+    ensure_db()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(env("PORT", "5000")), debug=env("FLASK_DEBUG") == "1")
