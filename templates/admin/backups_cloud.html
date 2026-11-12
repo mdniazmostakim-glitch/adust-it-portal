@@ -1,0 +1,29 @@
+{% extends "base.html" %}{% block title %}{{ _('Backups') }}{% endblock %}
+{% block content %}
+<div class="row-between">
+  <h1>{{ _('Backups') }}</h1>
+  <a class="btn primary" href="{{ url_for('admin_backup_export') }}">⬇ {{ _('Download full backup now') }}</a>
+</div>
+<div class="cols">
+<div class="card">
+  <h2>{{ _('Where the data is stored') }}</h2>
+  <table class="status-list">
+    <tr><td>{{ _('Database (all requests, users, history)') }}</td><td><code>PostgreSQL (Neon)</code></td></tr>
+    <tr><td>{{ _('Attached files') }}</td><td>{{ _('Inside the database') }}</td></tr>
+    <tr><td>{{ _('Daily backup copy') }}</td><td>{% if github %}<code>github.com/{{ repo }}</code>{% else %}<span class="badge st-rejected">{{ _('Not set') }}</span>{% endif %}</td></tr>
+  </table>
+</div>
+<div class="card">
+  <h2>{{ _('Backup status') }}</h2>
+  <p>{{ _('Last backup:') }} <strong>{{ last|dt }}</strong></p>
+  {% if github %}
+    {% if copy_error %}<div class="flash error">{{ _('The last copy to the second location failed:') }} {{ copy_error }}</div>
+    {% elif last_copy %}<p>{{ _('Last copy to second location:') }} <a href="{{ last_copy }}" target="_blank" rel="noopener">{{ _('open on GitHub') }}</a></p>{% endif %}
+    <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn">{{ _('Back up to GitHub now') }}</button></form>
+  {% else %}
+    <div class="flash warn">{{ _('Set PORTAL_GITHUB_BACKUP_REPO and PORTAL_GITHUB_TOKEN so a full backup is saved to a private GitHub repository every day.') }}</div>
+  {% endif %}
+  <p class="hint">{{ _('The backup is a zip with every table as JSON (files included). It can be loaded into any copy of the portal with: flask --app app restore-backup <file>.zip') }}</p>
+</div>
+</div>
+{% endblock %}

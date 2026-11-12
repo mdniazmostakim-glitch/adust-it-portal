@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% block title %}{{ _('First-time setup') }}{% endblock %}
+{% block content %}
+<div class="auth card">
+  {% include "_auth_head.html" %}
+  <h1 class="center">{{ _('First-time setup') }}</h1>
+  <p class="muted center">{{ _('Create the first IT admin account. This page closes once an admin exists.') }}</p>
+  {% if not code_set %}
+  <div class="flash error">{{ _('Set PORTAL_SETUP_CODE in the server settings first.') }}</div>
+  {% endif %}
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>{{ _('Setup code') }} * <input type="password" name="code" required autocomplete="off"></label>
+    <label>{{ _('Full name') }} * <input name="name" required value="{{ request.form.name }}"></label>
+    <label>{{ _('Email') }} * <input type="email" name="email" required value="{{ request.form.email }}"></label>
+    <label>{{ _('User ID') }} <input name="login_id" placeholder="it001" value="{{ request.form.login_id }}"></label>
+    <label>{{ _('Password') }} * <input type="password" name="password" minlength="8" required></label>
+    <label>{{ _('Confirm password') }} * <input type="password" name="confirm" minlength="8" required></label>
+    <button class="btn primary full">{{ _('Create admin account') }}</button>
+  </form>
+</div>
+{% endblock %}

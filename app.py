@@ -18,21 +18,24 @@ The portal only answers requests coming from the university's own networks
 import calendar
 import csv
 import imaplib
+import base64
 import io
+import json
+import mimetypes
 import ipaddress
 import os
 import re
 import secrets
+import sqlite3
 import shutil
 import smtplib
-import sqlite3
 import ssl
 import threading
 import urllib.parse
 import urllib.request
 import uuid
 import zipfile
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from functools import wraps
 
@@ -47,6 +50,8 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
+import db as dbmod
+from db import IS_PG, IntegrityError
 from i18n import translate
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -170,6 +175,11 @@ MAX_FAILS_PER_ID = 5
 MAX_FAILS_PER_IP = 20
 LOCKOUT_MINUTES = 15
 
+# On Vercel the portal runs as a serverless function: the file system is
+# read-only, nothing runs after a response is sent, and HTTPS is always on.
+ON_VERCEL = env("VERCEL") == "1"
+_vercel_url = env("VERCEL_PROJECT_PRODUCTION_URL", "")
+
 app = Flask(__name__)
 app.config.update(
     SECRET_KEY=env("PORTAL_SECRET_KEY") or secrets.token_hex(32),
@@ -182,24 +192,44 @@ app.config.update(
     MAX_CONTENT_LENGTH=25 * 1024 * 1024,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=env("PORTAL_HTTPS") == "1",
+    SESSION_COOKIE_SECURE=env("PORTAL_HTTPS") == "1" or ON_VERCEL,
     PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
     EMAIL_DOMAIN=env("PORTAL_EMAIL_DOMAIN", "adust.edu.bd").lower(),
     # Empty = any email address (personal or institutional) may register;
     # access is still limited to the university networks.
     ALLOWED_EMAIL_DOMAINS=[d.strip().lower().lstrip("@") for d in env("PORTAL_ALLOWED_EMAIL_DOMAINS", "").split(",")
                            if d.strip()],
-    BASE_URL=env("PORTAL_BASE_URL", "").rstrip("/"),
+    BASE_URL=(env("PORTAL_BASE_URL") or (f"https://{_vercel_url}" if _vercel_url else "")).rstrip("/"),
     AUTO_HOUSEKEEPING=env("PORTAL_AUTO_HOUSEKEEPING", "1") == "1",
 )
 
-if env("PORTAL_TRUST_PROXY") == "1":
+if ON_VERCEL and not IS_PG:
+    raise RuntimeError("On Vercel the portal needs a PostgreSQL database: set DATABASE_URL "
+                       "(e.g. the Neon connection string) in the project's Environment Variables.")
+if ON_VERCEL and not env("PORTAL_SECRET_KEY"):
+    # Each serverless instance would make its own random key and sign-ins would keep dropping.
+    raise RuntimeError("On Vercel set PORTAL_SECRET_KEY (a long random string) in the project's Environment Variables.")
+
+if env("PORTAL_TRUST_PROXY") == "1" or ON_VERCEL:
     # Behind nginx/Apache: trust one X-Forwarded-For hop for the client IP.
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 
+# All times are Bangladesh time (UTC+6, no daylight saving), whatever the
+# server's own clock is set to (Vercel runs in UTC).
+LOCAL_TZ = timezone(timedelta(hours=float(env("PORTAL_UTC_OFFSET", "6"))))
+
+
+def now_dt():
+    return datetime.now(LOCAL_TZ).replace(tzinfo=None)
+
+
+def local_today():
+    return now_dt().date()
+
+
 def now(delta=None):
-    t = datetime.now() + (delta or timedelta())
+    t = now_dt() + (delta or timedelta())
     return t.strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -213,9 +243,7 @@ def _(text, **kw):
 
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(app.config["DATABASE"], timeout=15)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
+        g.db = dbmod.connect(app.config["DATABASE"])
     return g.db
 
 
@@ -229,8 +257,14 @@ def close_db(_exc):
 def init_db():
     db = get_db()
     with open(os.path.join(BASE_DIR, "schema.sql")) as f:
-        db.executescript(f.read())
-    db.execute("PRAGMA journal_mode = WAL")
+        schema = f.read()
+    if IS_PG:
+        # Each serverless instance runs this on start; the advisory lock stops
+        # two of them creating the tables at the same moment.
+        db.executescript("SELECT pg_advisory_xact_lock(470211);\n" + dbmod.pg_schema(schema))
+    else:
+        db.executescript(schema)
+        db.execute("PRAGMA journal_mode = WAL")
     migrate(db)
     if db.execute("SELECT COUNT(*) FROM categories").fetchone()[0] == 0:
         db.executemany("INSERT INTO categories (name, needs_approval, needs_registrar) VALUES (?, ?, ?)",
@@ -238,8 +272,9 @@ def init_db():
     sync_departments(db)
     db.executemany("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", DEFAULT_SETTINGS.items())
     db.commit()
-    for folder in ("UPLOAD_FOLDER", "BACKUP_FOLDER"):
-        os.makedirs(app.config[folder], exist_ok=True)
+    if not IS_PG:  # with PostgreSQL, files and backups are kept in the database / GitHub
+        for folder in ("UPLOAD_FOLDER", "BACKUP_FOLDER"):
+            os.makedirs(app.config[folder], exist_ok=True)
 
 
 # Columns added after the first release: (table, column, definition).
@@ -279,8 +314,7 @@ def sync_departments(db):
 
 def migrate(db):
     for table, column, definition in MIGRATIONS:
-        cols = {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
-        if column not in cols:
+        if column not in db.columns(table):
             db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
     # Before titles existed every approver was a plain "department head": treat them as chairman.
     db.execute("UPDATE users SET approver_title = 'chairman' WHERE is_approver = 1 AND approver_title = ''")
@@ -335,7 +369,7 @@ def create_admin_command(name, email, login_id, password):
              generate_password_hash(password), now()),
         )
         db.commit()
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         raise click.ClickException("A user with that email or login ID already exists.")
     click.echo(f"Admin {email} created.")
 
@@ -381,6 +415,29 @@ def housekeeping_command():
         click.echo(f"{k}: {v}")
 
 
+@app.cli.command("restore-backup")
+@click.argument("zip_path", type=click.Path(exists=True, dir_okay=False))
+@click.option("--yes", is_flag=True, help="Do not ask for confirmation.")
+def restore_backup_command(zip_path, yes):
+    """Replace ALL data with a JSON backup zip (from Admin > Backups or GitHub)."""
+    init_db()
+    if not yes:
+        click.confirm("This deletes everything currently in the database and loads the backup. Continue?", abort=True)
+    with open(zip_path, "rb") as fh:
+        counts = restore_backup(fh.read())
+    click.echo("Restored: " + ", ".join(f"{t} {n}" for t, n in counts.items()))
+
+
+@app.cli.command("export-backup")
+@click.argument("zip_path")
+def export_backup_command(zip_path):
+    """Write a JSON backup zip of all data (works with SQLite and PostgreSQL)."""
+    init_db()
+    with open(zip_path, "wb") as fh:
+        fh.write(export_backup())
+    click.echo(f"Backup written to {zip_path}")
+
+
 @app.cli.command("backup")
 def backup_command():
     """Create a backup zip (database + uploaded files) now."""
@@ -421,8 +478,8 @@ def ip_allowed(ip_text):
 def restrict_to_university_network():
     g.client_ip = request.remote_addr or ""
     g.lang = session.get("lang", "en")
-    if request.path.startswith("/static/img/"):
-        return None
+    if request.path.startswith(("/static/img/", "/cron/")):
+        return None  # logos for the "access restricted" page; cron is checked by its own secret
     if not ip_allowed(g.client_ip):
         return render_template("blocked.html", ip=g.client_ip), 403
 
@@ -456,15 +513,25 @@ def csrf_protect():
 def trigger_housekeeping():
     """Runs reminders/backups at most every 5 minutes, piggy-backing on normal
     traffic, so no extra scheduler is required (a cron job also works)."""
-    if not app.config["AUTO_HOUSEKEEPING"] or request.path.startswith(("/static", "/api")):
+    if not app.config["AUTO_HOUSEKEEPING"] or request.path.startswith(("/static", "/api", "/cron")):
         return
     last = get_setting("hk_last")
-    if last and last > now(timedelta(minutes=-5)):
+    if last and last > now(timedelta(minutes=-15 if ON_VERCEL else -5)):
         return
     db = get_db()
     claimed = db.execute("UPDATE settings SET value = ? WHERE key = 'hk_last' AND value = ?", (now(), last))
     db.commit()
-    if claimed.rowcount == 1:  # only one worker wins the race
+    if claimed.rowcount != 1:  # only one worker wins the race
+        return
+    if ON_VERCEL:
+        # A serverless function stops once the response is sent, so the quick
+        # checks run here; the daily backup runs from the Vercel cron job.
+        try:
+            housekeeping(include_backup=False)
+        except Exception as exc:
+            get_db().rollback()
+            app.logger.exception("Housekeeping failed: %s", exc)
+    else:
         threading.Thread(target=_housekeeping_thread, daemon=True).start()
 
 
@@ -532,7 +599,7 @@ app.jinja_env.globals.update(
     ASSET_TYPES=ASSET_TYPES, ASSET_STATUSES=ASSET_STATUSES, FREQUENCIES=FREQUENCIES, LEVELS=LEVELS,
     is_it=is_it, is_admin=is_admin, unread_count=unread_count, approvals_count=approvals_count,
     active_announcements=active_announcements, departments=departments, departments_grouped=departments_grouped,
-    now_year=lambda: date.today().year, today=lambda: date.today().isoformat(),
+    now_year=lambda: local_today().year, today=lambda: local_today().isoformat(),
     sidebar_side=lambda: get_setting("sidebar_side"),
     approver_short=lambda title: "Registrar" if title == "registrar" else APPROVER_TITLES.get(title, ""),
     pending_accounts_count=lambda: pending_accounts_count(),
@@ -578,9 +645,41 @@ def save_upload(field="file"):
     if ext not in ALLOWED_EXTENSIONS:
         return False
     original = secure_filename(upload.filename) or f"file.{ext}"
-    stored = f"{uuid.uuid4().hex}_{original}"
-    upload.save(os.path.join(app.config["UPLOAD_FOLDER"], stored))
-    return original, stored
+    return original, store_file(original, upload.read())
+
+
+def store_file(name, data):
+    """Keep an uploaded file: in the database on PostgreSQL ("db:<id>"),
+    otherwise in the uploads folder. Returns the key to store with the record."""
+    if IS_PG:
+        cur = get_db().execute("INSERT INTO files (name, data, created_at) VALUES (?, ?, ?)", (name, data, now()))
+        return f"db:{cur.lastrowid}"
+    stored = f"{uuid.uuid4().hex}_{name}"
+    with open(os.path.join(app.config["UPLOAD_FOLDER"], stored), "wb") as fh:
+        fh.write(data)
+    return stored
+
+
+def read_stored(stored):
+    if not stored:
+        return None
+    if stored.startswith("db:"):
+        row = get_db().execute("SELECT data FROM files WHERE id = ?", (int(stored[3:]),)).fetchone()
+        return bytes(row["data"]) if row else None
+    path = os.path.join(app.config["UPLOAD_FOLDER"], os.path.basename(stored))
+    if not os.path.isfile(path):
+        return None
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
+def send_stored(stored, download_name=None, as_attachment=False):
+    data = read_stored(stored)
+    if data is None:
+        abort(404)
+    name = download_name or stored.split("_", 1)[-1]
+    return send_file(io.BytesIO(data), as_attachment=as_attachment, download_name=name,
+                     mimetype=mimetypes.guess_type(name)[0] or "application/octet-stream")
 
 
 def valid_date(value):
@@ -614,7 +713,7 @@ def format_d(value):
 def due_state(ticket):
     if not ticket["due_date"] or ticket["status"] not in OPEN_STATUSES:
         return ""
-    days = (date.fromisoformat(ticket["due_date"]) - date.today()).days
+    days = (date.fromisoformat(ticket["due_date"]) - local_today()).days
     return "overdue" if days < 0 else "soon" if days <= 1 else ""
 
 
@@ -720,7 +819,10 @@ def send_email_now(to_addrs, subject, body):
 
 def send_email(to_addrs, subject, body):
     if env("SMTP_HOST") and to_addrs:
-        threading.Thread(target=send_email_now, args=(list(to_addrs), subject, body), daemon=True).start()
+        if ON_VERCEL:
+            send_email_now(list(to_addrs), subject, body)
+        else:
+            threading.Thread(target=send_email_now, args=(list(to_addrs), subject, body), daemon=True).start()
 
 
 def normalize_phone(phone):
@@ -758,7 +860,10 @@ def send_sms_now(phones, text):
 def send_sms(phones, text):
     phones = [p for p in phones if p]
     if env("SMS_API_URL") and phones:
-        threading.Thread(target=send_sms_now, args=(phones, text), daemon=True).start()
+        if ON_VERCEL:
+            send_sms_now(phones, text)
+        else:
+            threading.Thread(target=send_sms_now, args=(phones, text), daemon=True).start()
 
 
 def notify(user_ids, ticket, message, sms=False):
@@ -825,7 +930,7 @@ def department_approvers(department, exclude_id=None, _seen=None):
     Registrar, a department without chairman/coordinator -> Dean's office)."""
     rows = get_db().execute(
         "SELECT id, approver_title FROM users WHERE active = 1 AND approved = 1 AND approver_title != '' "
-        "AND department != '' AND lower(department) = lower(?) AND id IS NOT ?",
+        "AND department != '' AND lower(department) = lower(?) AND id IS DISTINCT FROM ?",
         (department or "", exclude_id)).fetchall()
     primary = [r["id"] for r in rows if r["approver_title"] in (*PRIMARY_TITLES, "registrar")]
     coordinators = [r["id"] for r in rows if r["approver_title"] == "coordinator"]
@@ -935,6 +1040,57 @@ def record_failure(ident):
     db.commit()
 
 
+def admin_exists():
+    return get_db().execute("SELECT 1 FROM users WHERE role = 'admin' AND active = 1 LIMIT 1").fetchone() is not None
+
+
+@app.route("/setup", methods=["GET", "POST"])
+def first_setup():
+    """Create the first IT admin from the browser (on Vercel there is no command
+    line). Works only while no admin exists, and needs PORTAL_SETUP_CODE."""
+    if admin_exists():
+        return redirect(url_for("login"))
+    code = env("PORTAL_SETUP_CODE", "")
+    if request.method == "POST":
+        f = request.form
+        email = f.get("email", "").strip().lower()
+        error = None
+        if not code:
+            error = _("Set PORTAL_SETUP_CODE in the server settings first.")
+        elif locked_out("setup"):
+            error = _("Too many failed attempts. Please try again after {n} minutes.", n=LOCKOUT_MINUTES)
+        elif not secrets.compare_digest(f.get("code", ""), code):
+            record_failure("setup")
+            error = _("The setup code is not correct.")
+        elif not f.get("name", "").strip() or not EMAIL_RE.match(email):
+            error = _("Name, email and a valid role are required.")
+        elif len(f.get("password", "")) < 8 or f.get("password") != f.get("confirm"):
+            error = _("New password must be 8+ characters and match the confirmation.")
+        if error:
+            flash(error, "error")
+        else:
+            db = get_db()
+            db.execute("INSERT INTO users (login_id, name, email, department, designation, role, password_hash, created_at) "
+                       "VALUES (?, ?, ?, 'IT Section', 'IT Admin', 'admin', ?, ?)",
+                       (f.get("login_id", "").strip().lower() or None, f["name"].strip(), email,
+                        generate_password_hash(f["password"]), now()))
+            db.commit()
+            flash(_("Admin account created. Please sign in."), "success")
+            return redirect(url_for("login"))
+    return render_template("setup.html", code_set=bool(code))
+
+
+@app.route("/cron/housekeeping")
+def cron_housekeeping():
+    """Called once a day by Vercel Cron (see vercel.json): reminders,
+    escalation, auto-close, recurring tasks and the GitHub backup."""
+    secret = env("CRON_SECRET", "")
+    if not secret or not secrets.compare_digest(request.headers.get("Authorization", ""), f"Bearer {secret}"):
+        abort(403)
+    set_setting("hk_last", now())
+    return jsonify(housekeeping())
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if g.user:
@@ -986,7 +1142,7 @@ def login():
                 return redirect(nxt)
             return redirect(url_for("index"))
     return render_template("login.html", webmail=bool(env("PORTAL_IMAP_HOST")),
-                           domain=app.config["EMAIL_DOMAIN"])
+                           domain=app.config["EMAIL_DOMAIN"], needs_setup=not admin_exists())
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -1028,7 +1184,7 @@ def register():
                 else:
                     flash(_("Account created. Please sign in."), "success")
                 return redirect(url_for("login"))
-            except sqlite3.IntegrityError:
+            except IntegrityError:
                 error = _("An account with that email or user ID already exists.")
         flash(error, "error")
     return render_template("register.html", domains=app.config["ALLOWED_EMAIL_DOMAINS"])
@@ -1122,7 +1278,7 @@ def set_language(code):
 def my_signature():
     if not g.user["signature_stored"]:
         abort(404)
-    return send_from_directory(app.config["UPLOAD_FOLDER"], g.user["signature_stored"])
+    return send_stored(g.user["signature_stored"])
 
 
 @app.route("/profile", methods=["GET", "POST"])
@@ -1143,8 +1299,7 @@ def profile():
                 flash(_("Please choose a PNG or JPG image of your signature."), "error")
             else:
                 # A new file each time, so signatures on earlier approvals stay as they were.
-                stored = f"signature_{g.user['id']}_{uuid.uuid4().hex}.{ext}"
-                upload.save(os.path.join(app.config["UPLOAD_FOLDER"], stored))
+                stored = store_file(f"signature_{g.user['id']}.{ext}", upload.read())
                 db.execute("UPDATE users SET signature_stored = ? WHERE id = ?", (stored, g.user["id"]))
                 db.commit()
                 flash(_("Signature saved. It will appear on your approvals and on printed job cards."), "success")
@@ -1171,7 +1326,7 @@ def profile():
                 db.commit()
                 session["lang"] = g.lang = lang
                 flash(_("Profile saved."), "success")
-            except sqlite3.IntegrityError:
+            except IntegrityError:
                 flash(_("That user ID is already taken."), "error")
         return redirect(url_for("profile"))
     return render_template("profile.html")
@@ -1226,7 +1381,7 @@ def index():
             f"SELECT COUNT(*) FROM tickets WHERE assigned_to IS NULL AND status IN {OPEN_STATUSES}").fetchone()[0]
         stats["overdue"] = db.execute(
             f"SELECT COUNT(*) FROM tickets WHERE status IN {OPEN_STATUSES} AND due_date < ?",
-            (date.today().isoformat(),)).fetchone()[0]
+            (local_today().isoformat(),)).fetchone()[0]
         stats["urgent"] = db.execute(
             f"SELECT COUNT(*) FROM tickets WHERE status IN {OPEN_STATUSES} AND urgent = 1").fetchone()[0]
     status_scope = OPEN_STATUSES if is_it() else (*OPEN_STATUSES, "pending_approval", "resolved")
@@ -1246,7 +1401,7 @@ def it_dashboard_data():
     key = request.args.get("range", "30")
     key = key if key in DASH_RANGES else "30"
     days = DASH_RANGES[key]
-    since = (date.today() - timedelta(days=days - 1)).isoformat() if days else "2000-01-01"
+    since = (local_today() - timedelta(days=days - 1)).isoformat() if days else "2000-01-01"
     in_range = "t.created_at >= ?"
     categories = db.execute(
         f"SELECT COALESCE(c.name, '—') AS name, c.id AS id, "
@@ -1317,7 +1472,7 @@ def ticket_filters(q):
         where.append("t.urgent = 1")
     if q.get("overdue"):
         where.append(f"t.status IN {OPEN_STATUSES} AND t.due_date < ?")
-        args.append(date.today().isoformat())
+        args.append(local_today().isoformat())
     if q.get("from"):
         where.append("t.created_at >= ?")
         args.append(q["from"])
@@ -1373,7 +1528,7 @@ def ticket_export():
              t["assignee_name"] or "", t["asset_tag"] or "", t["location"], t["created_at"],
              t["first_response_at"], t["resolved_at"], t["rating"], trail.get(t["id"], ""), t["description"], t["remarks"]]
             for t in rows]
-    return xlsx_response(f"it-requests-{date.today()}.xlsx", [("Requests", headers, data)])
+    return xlsx_response(f"it-requests-{local_today()}.xlsx", [("Requests", headers, data)])
 
 
 def it_staff():
@@ -1435,7 +1590,7 @@ def create_ticket(requester, title, category_id, priority=5, urgent=False, due_d
         (title, description, remarks, category_id, priority, 1 if urgent else 0, due_date, location, status, stage,
          requester["id"], assigned_to, asset_id, recurring_id, attachment[0], attachment[1], ts, ts))
     tid = cur.lastrowid
-    code = f"IT-{date.today().year}-{tid:04d}"
+    code = f"IT-{local_today().year}-{tid:04d}"
     db.execute("UPDATE tickets SET code = ? WHERE id = ?", (code, tid))
     add_update(tid, requester["id"], "Created from recurring maintenance schedule" if recurring_id
                else "Request submitted" + {"department": "; waiting for department approval",
@@ -1456,7 +1611,7 @@ def create_ticket(requester, title, category_id, priority=5, urgent=False, due_d
 def find_asset(tag):
     if not tag:
         return None
-    return get_db().execute("SELECT * FROM assets WHERE tag = ?", (tag.strip(),)).fetchone()
+    return get_db().execute("SELECT * FROM assets WHERE lower(tag) = lower(?)", (tag.strip(),)).fetchone()
 
 
 @app.route("/tickets/new", methods=["GET", "POST"])
@@ -1492,7 +1647,7 @@ def new_ticket():
                 error = _("Please choose a category.")
             elif assigned_to and assigned_to not in {s["id"] for s in staff}:
                 error = _("Invalid IT staff selection.")
-            elif due and due < date.today().isoformat():
+            elif due and due < local_today().isoformat():
                 error = _("The required-by date cannot be in the past.")
             elif f.get("asset_tag", "").strip():
                 asset = find_asset(f["asset_tag"])
@@ -1662,7 +1817,7 @@ def approval_signature(approval_id):
     if a is None or not a["signature_stored"]:
         abort(404)
     load_ticket(a["ticket_id"])  # access check
-    return send_from_directory(app.config["UPLOAD_FOLDER"], a["signature_stored"])
+    return send_stored(a["signature_stored"])
 
 
 @app.route("/approvals/<int:approval_id>/file")
@@ -1672,8 +1827,7 @@ def approval_file(approval_id):
     if a is None or not a["attachment_stored"]:
         abort(404)
     load_ticket(a["ticket_id"])
-    return send_from_directory(app.config["UPLOAD_FOLDER"], a["attachment_stored"], as_attachment=True,
-                               download_name=a["attachment_name"])
+    return send_stored(a["attachment_stored"], a["attachment_name"], as_attachment=True)
 
 
 @app.route("/approvals")
@@ -1798,8 +1952,7 @@ def download(kind, item_id):
     load_ticket(row["ticket_id"])  # access check
     if row["internal"] and not is_it():
         abort(403)
-    return send_from_directory(app.config["UPLOAD_FOLDER"], row["attachment_stored"],
-                               as_attachment=True, download_name=row["attachment_name"])
+    return send_stored(row["attachment_stored"], row["attachment_name"], as_attachment=True)
 
 
 # --------------------------------------------------------------------------
@@ -1954,7 +2107,7 @@ def assets_index():
         f"(SELECT COUNT(*) FROM tickets WHERE asset_id = a.id AND status IN {OPEN_STATUSES}) AS open_requests "
         f"FROM assets a WHERE {' AND '.join(where)} ORDER BY a.tag", args).fetchall()
     if request.args.get("export"):
-        return xlsx_response(f"it-assets-{date.today()}.xlsx", [(
+        return xlsx_response(f"it-assets-{local_today()}.xlsx", [(
             "Assets", ["Asset tag", "Type", "Model / name", "Serial no.", "Department", "Location", "User",
                        "Purchase date", "Warranty until", "Status", "Requests", "Notes"],
             [[a["tag"], a["type"], a["name"], a["serial"], a["department"], a["location"], a["user_name"],
@@ -2002,7 +2155,7 @@ def asset_edit(asset_id=None):
             return redirect(url_for("asset_detail", asset_id=asset_id))
         except ValueError as exc:
             flash(str(exc), "error")
-        except sqlite3.IntegrityError:
+        except IntegrityError:
             flash(_("Another device already uses that asset tag."), "error")
     return render_template("assets/edit.html", a=a)
 
@@ -2101,7 +2254,7 @@ def admin_announcements():
 
 def report_range():
     q = request.args
-    today = date.today()
+    today = local_today()
     preset = q.get("range", "30d" if not (q.get("from") or q.get("to")) else "custom")
     if preset == "month":
         start, end = today.replace(day=1), today
@@ -2154,7 +2307,7 @@ def report_data(start, end):
         f"SELECT s.id, s.tag, s.type, s.name, s.location, COUNT(*) n FROM tickets t JOIN assets s ON s.id = t.asset_id "
         f"WHERE {rng} GROUP BY s.id ORDER BY n DESC LIMIT 10", a).fetchall()
     monthly = db.execute(
-        "SELECT substr(created_at, 1, 7) month, COUNT(*) n, SUM(status IN ('resolved','closed')) done "
+        "SELECT substr(created_at, 1, 7) AS month, COUNT(*) n, SUM(status IN ('resolved','closed')) done "
         "FROM tickets WHERE created_at >= date('now', 'start of month', '-11 months') GROUP BY month ORDER BY month").fetchall()
     return dict(summary=summary, by_status=by_status, by_staff=by_staff, by_category=by_category,
                 by_dept=by_dept, top_assets=top_assets, monthly=monthly,
@@ -2228,7 +2381,7 @@ def admin_users():
                            (*fields, generate_password_hash(password) if password else None, now()))
                 flash(_("Account for {name} created.", name=fields[1]), "success")
             db.commit()
-        except sqlite3.IntegrityError:
+        except IntegrityError:
             flash(_("Email or user ID already in use."), "error")
         return redirect(url_for("admin_users"))
     edit = None
@@ -2303,7 +2456,7 @@ def admin_departments():
                 db.execute("INSERT INTO departments (name, grp, parent, sort) VALUES (?, ?, ?, "
                            "(SELECT COALESCE(MAX(sort), 0) + 1 FROM departments))", (f["name"].strip(), grp, parent))
                 flash(_("Department added."), "success")
-            except sqlite3.IntegrityError:
+            except IntegrityError:
                 flash(_("That department already exists."), "error")
         db.commit()
         return redirect(url_for("admin_departments"))
@@ -2335,7 +2488,7 @@ def admin_categories():
                 db.execute("INSERT INTO categories (name, needs_approval, needs_registrar) VALUES (?, ?, ?)",
                            (f["name"].strip(), 1 if f.get("needs_approval") else 0, 1 if f.get("needs_registrar") else 0))
                 flash(_("Category added."), "success")
-            except sqlite3.IntegrityError:
+            except IntegrityError:
                 flash(_("That category already exists."), "error")
         db.commit()
         return redirect(url_for("admin_categories"))
@@ -2473,18 +2626,107 @@ def prune_backups(folder):
     monthly = {}
     for f in reversed(files):  # oldest first, so the first of each month wins
         monthly.setdefault(f["name"][16:22], f["name"])  # adust-it-backup-YYYYMM...
-    cutoff = (datetime.now() - timedelta(days=keep_days)).strftime("%Y-%m-%d %H:%M:%S")
+    cutoff = (now_dt() - timedelta(days=keep_days)).strftime("%Y-%m-%d %H:%M:%S")
     for f in files[3:]:
         if f["time"] < cutoff and f["name"] not in monthly.values():
             os.remove(os.path.join(folder, f["name"]))
 
 
+# Tables in the order a restore must insert them (parents before children).
+BACKUP_TABLES = ["users", "departments", "categories", "assets", "recurring_tasks", "tickets", "ticket_updates",
+                 "approvals", "notifications", "announcements", "kb_articles", "allowed_networks", "settings", "files"]
+
+
+def export_backup():
+    """Every table as JSON in a zip (works for SQLite and PostgreSQL alike).
+    Binary values (files, signatures) are base64 encoded."""
+    db = get_db()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        counts = {}
+        for table in BACKUP_TABLES:
+            rows = []
+            for r in db.execute(f"SELECT * FROM {table}"):
+                rows.append({k: ({"__b64__": base64.b64encode(r[k]).decode()} if isinstance(r[k], (bytes, bytearray))
+                                 else r[k]) for k in r.keys()})
+            counts[table] = len(rows)
+            z.writestr(f"{table}.json", json.dumps(rows, ensure_ascii=False))
+        if not IS_PG:  # files kept on disk go in as they are
+            uploads = app.config["UPLOAD_FOLDER"]
+            for name in os.listdir(uploads) if os.path.isdir(uploads) else []:
+                full = os.path.join(uploads, name)
+                if os.path.isfile(full):
+                    z.write(full, f"uploads/{name}")
+        z.writestr("manifest.json", json.dumps({"format": "adust-it-portal-json-1", "created": now(),
+                                                 "database": "postgresql" if IS_PG else "sqlite", "rows": counts}))
+    return buf.getvalue()
+
+
+def restore_backup(data):
+    """Replace everything in the database with a JSON backup made by export_backup()."""
+    db = get_db()
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        manifest = json.loads(z.read("manifest.json"))
+        if manifest.get("format") != "adust-it-portal-json-1":
+            raise ValueError("Not a portal JSON backup")
+        tables = {t: json.loads(z.read(f"{t}.json")) for t in BACKUP_TABLES if f"{t}.json" in z.namelist()}
+        uploads = [n for n in z.namelist() if n.startswith("uploads/") and not n.endswith("/")]
+        if uploads and not IS_PG:
+            os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+            for n in uploads:
+                with open(os.path.join(app.config["UPLOAD_FOLDER"], os.path.basename(n)), "wb") as fh:
+                    fh.write(z.read(n))
+    for table in reversed(BACKUP_TABLES):
+        db.execute(f"DELETE FROM {table}")
+    for table in BACKUP_TABLES:
+        for row in tables.get(table, []):
+            cols = list(row)
+            vals = [base64.b64decode(v["__b64__"]) if isinstance(v, dict) and "__b64__" in v else v for v in row.values()]
+            db.execute(f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", vals)
+        if IS_PG and table != "settings":
+            db.execute(f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), COALESCE((SELECT MAX(id) FROM {table}), 0) + 1, false)")
+    db.commit()
+    return {t: len(r) for t, r in tables.items()}
+
+
+def github_backup_configured():
+    return bool(env("PORTAL_GITHUB_BACKUP_REPO") and env("PORTAL_GITHUB_TOKEN"))
+
+
+def upload_backup_to_github(data, name):
+    """Commit the backup zip to a private GitHub repository (one file per day,
+    in a folder per month), so a copy of all data is kept outside the database."""
+    repo, token = env("PORTAL_GITHUB_BACKUP_REPO"), env("PORTAL_GITHUB_TOKEN")
+    path = f"backups/{now_dt():%Y-%m}/{name}"
+    body = json.dumps({"message": f"Portal backup {now()}", "content": base64.b64encode(data).decode(),
+                       "branch": env("PORTAL_GITHUB_BACKUP_BRANCH", "main")}).encode()
+    req = urllib.request.Request(f"https://api.github.com/repos/{repo}/contents/{path}", data=body, method="PUT",
+                                 headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
+                                          "User-Agent": "adust-it-portal", "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        resp.read()
+    return f"https://github.com/{repo}/blob/{env('PORTAL_GITHUB_BACKUP_BRANCH', 'main')}/{path}"
+
+
 def make_backup():
-    """Zip a consistent copy of the database plus all uploaded files, copy it
-    to the second backup location, then apply the retention policy."""
+    """Back up all data. On PostgreSQL: a JSON zip committed to GitHub. On a
+    local server: a zip of the database file plus uploads in the backup folder,
+    copied to the second location, then the retention policy is applied."""
+    stamp = now_dt().strftime("%Y%m%d-%H%M%S")
+    if IS_PG:
+        name = f"adust-it-backup-{stamp}.zip"
+        if github_backup_configured():
+            try:
+                set_setting("last_backup_copy", upload_backup_to_github(export_backup(), name))
+                set_setting("backup_copy_error", "")
+            except Exception as exc:
+                app.logger.warning("GitHub backup failed: %s", exc)
+                set_setting("backup_copy_error", f"{now()}: {exc}")
+                return "-"
+        set_setting("last_backup", now())
+        return name
     folder = app.config["BACKUP_FOLDER"]
     os.makedirs(folder, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     path = os.path.join(folder, f"adust-it-backup-{stamp}.zip")
     tmp = path + ".db"
     src, dst = sqlite3.connect(app.config["DATABASE"]), sqlite3.connect(tmp)
@@ -2523,6 +2765,10 @@ def admin_backups():
         path = make_backup()
         flash(_("Backup created: {name}", name=os.path.basename(path)), "success")
         return redirect(url_for("admin_backups"))
+    if IS_PG:
+        return render_template("admin/backups_cloud.html", last=get_setting("last_backup"),
+                               github=github_backup_configured(), repo=env("PORTAL_GITHUB_BACKUP_REPO", ""),
+                               last_copy=get_setting("last_backup_copy"), copy_error=get_setting("backup_copy_error"))
     copy_dir = app.config["BACKUP_COPY_FOLDER"]
     return render_template("admin/backups.html", files=list_backups(), last=get_setting("last_backup"),
                            folder=os.path.abspath(app.config["BACKUP_FOLDER"]), keep=int_setting("backup_keep_days"),
@@ -2530,6 +2776,14 @@ def admin_backups():
                            last_copy=get_setting("last_backup_copy"), copy_error=get_setting("backup_copy_error"),
                            db_path=os.path.abspath(app.config["DATABASE"]),
                            uploads_path=os.path.abspath(app.config["UPLOAD_FOLDER"]))
+
+
+@app.route("/admin/backups/export.zip")
+@admin_required
+def admin_backup_export():
+    """Download a full backup (all data and files) right now."""
+    return send_file(io.BytesIO(export_backup()), as_attachment=True, mimetype="application/zip",
+                     download_name=f"adust-it-backup-{now_dt():%Y%m%d-%H%M%S}.zip")
 
 
 @app.route("/admin/backups/<name>")
@@ -2586,7 +2840,7 @@ def admin_settings():
 
 def run_recurring(only_id=None):
     db = get_db()
-    today = date.today()
+    today = local_today()
     sql = "SELECT * FROM recurring_tasks WHERE active = 1 AND " + ("id = ?" if only_id else "next_run <= ?")
     created = 0
     for task in db.execute(sql, (only_id if only_id else today.isoformat(),)).fetchall():
@@ -2608,7 +2862,7 @@ def run_recurring(only_id=None):
     return created
 
 
-def housekeeping():
+def housekeeping(include_backup=True):
     db = get_db()
     result = {"escalated": 0, "overdue": 0, "approval_reminders": 0, "auto_closed": 0, "recurring": 0, "backup": "-"}
 
@@ -2626,7 +2880,7 @@ def housekeeping():
             result["escalated"] += 1
 
     # 2. Past the needed-by date (once per day per request)
-    today = date.today().isoformat()
+    today = local_today().isoformat()
     for t in db.execute(f"SELECT * FROM tickets WHERE status IN {OPEN_STATUSES} AND due_date < ? "
                         "AND (overdue_notified IS NULL OR overdue_notified < ?)", (today, today)).fetchall():
         db.execute("UPDATE tickets SET overdue_notified = ? WHERE id = ?", (today, t["id"]))
@@ -2669,9 +2923,9 @@ def housekeeping():
     # 5. Recurring maintenance tasks
     result["recurring"] = run_recurring()
 
-    # 6. Daily backup
+    # 6. Daily backup (on PostgreSQL only when a GitHub backup repository is set)
     last = get_setting("last_backup")
-    if not last or last < now(timedelta(hours=-24)):
+    if include_backup and (not IS_PG or github_backup_configured()) and (not last or last < now(timedelta(hours=-23))):
         result["backup"] = os.path.basename(make_backup())
 
     db.execute("DELETE FROM login_attempts WHERE created_at < ?", (now(timedelta(days=-1)),))

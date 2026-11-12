@@ -193,3 +193,12 @@ CREATE INDEX IF NOT EXISTS idx_tickets_asset ON tickets(asset_id);
 CREATE INDEX IF NOT EXISTS idx_updates_ticket ON ticket_updates(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, is_read);
 CREATE INDEX IF NOT EXISTS idx_attempts ON login_attempts(ident, created_at);
+
+-- Uploaded files and signatures when the portal runs on PostgreSQL (Vercel has no
+-- permanent disk). On a local server they are kept in the uploads folder instead.
+CREATE TABLE IF NOT EXISTS files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    data BLOB NOT NULL,
+    created_at TEXT NOT NULL
+);

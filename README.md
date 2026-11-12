@@ -119,6 +119,33 @@ flask --app app housekeeping                                   # run reminders/b
 flask --app app backup                                         # backup now
 ```
 
+## Deploy on Vercel + Neon (cloud)
+
+The same code runs on Vercel. When `DATABASE_URL` is set, it uses PostgreSQL (Neon) instead of SQLite. All tables live in their own schema (`adust_it`), so the portal can share the Neon `neondb` database with other apps. Uploaded files and signatures are stored in the database, because Vercel has no disk.
+
+1. **GitHub**: push this folder to a private GitHub repository.
+2. **Vercel** → *Add New → Project* → import the repository (framework: *Other*; nothing else to set).
+3. **Environment Variables** (Project → Settings → Environment Variables):
+
+   | Name | Value |
+   |---|---|
+   | `DATABASE_URL` | Neon connection string (the *pooled* one, `...-pooler...`). A `?schema=...` part is ignored. |
+   | `PORTAL_SECRET_KEY` | a long random string (e.g. `python -c "import secrets;print(secrets.token_hex(32))"`) |
+   | `PORTAL_SETUP_CODE` | a one-time code you choose, used to create the first IT admin at `/setup` |
+   | `CRON_SECRET` | another random string (Vercel Cron sends it to `/cron/housekeeping` once a day) |
+   | `PORTAL_ALLOWED_NETWORKS` | the university's **public** IP(s), e.g. `203.0.113.10/32`. Leave it empty until you know it. The campus 172.x addresses are private and are never seen by Vercel. |
+   | `PORTAL_GITHUB_BACKUP_REPO` *(optional)* | `owner/repo` of a **private** repository for daily backups |
+   | `PORTAL_GITHUB_TOKEN` *(optional)* | fine-grained token with *Contents: Read and write* on that repo only |
+   | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` *(optional)* | email notifications |
+
+4. **Deploy**, then open `https://<project>.vercel.app/setup`, enter the setup code, and create the first IT admin.
+5. **Find the campus public IP**: on a campus PC, open <https://api.ipify.org>. Put that IP in `PORTAL_ALLOWED_NETWORKS` (with `/32`, or the whole block if the ISP gave one), then redeploy.
+
+**Backups on Vercel:** Neon keeps its own point-in-time history. On top of that, the daily cron writes a full JSON backup zip to `backups/YYYY-MM/` in the GitHub backup repository, if one is configured. An IT admin can also download one at any time from *Admin → Backups*. To restore a backup into any database:
+`DATABASE_URL=... flask --app app restore-backup backup.zip`
+
+**Move data between servers:** `flask --app app export-backup x.zip` on the old server, then `restore-backup x.zip` on the new one. This works from SQLite to PostgreSQL and back.
+
 ## Project layout
 
 ```

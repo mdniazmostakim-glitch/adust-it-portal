@@ -13,11 +13,17 @@ os.environ.update(PORTAL_DATABASE=os.path.join(d, "t.db"), PORTAL_UPLOADS=os.pat
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import app as A
 from app import app
+from db import IS_PG
+local_today = A.local_today          # the portal works in Bangladesh time, whatever this machine's clock is
 emails, sms = [], []
 A.send_email = lambda to, subj, body: emails.append((sorted(to), subj, body))
 A.send_sms = lambda phones, text: sms.append((sorted(p for p in phones if p), text))
 A.send_email_now = lambda to, subj, body: emails.append((sorted(to), subj, body)) or None
 A.webmail_login = lambda e, p: p == "webmailpw"
+github_uploads = []
+if IS_PG:
+    os.environ.update(PORTAL_GITHUB_BACKUP_REPO="adust/it-portal-backups", PORTAL_GITHUB_TOKEN="test")
+    A.upload_backup_to_github = lambda data, name: github_uploads.append((name, data)) or f"https://github.com/x/{name}"
 app.test_cli_runner().invoke(args=["create-admin", "--name", "Kamal Hossain", "--email", "itadmin@adust.edu.bd", "--login-id", "it001", "--password", "adminpass1"])
 
 def client(ip="10.20.0.5"):
@@ -127,7 +133,7 @@ print("announce ok")
 # ---------- urgent request -> SMS to IT
 emails.clear(); sms.clear()
 r = post(u, "/tickets/new", {"title": "Lab PC not booting", "category_id": "1", "priority": "9", "urgent": "1", "description": "PC dead", "asset_tag": "ADUST-PC-0001", "location": "Lab 3"}, content_type="multipart/form-data")
-ok(r, "IT-%d-0001" % date.today().year, "has been sent to the IT section", "ADUST-PC-0001")
+ok(r, "IT-%d-0001" % local_today().year, "has been sent to the IT section", "ADUST-PC-0001")
 assert any("01711000001" in s[0] for s in sms) and any("01711000000" in s[0] for s in sms), sms
 post(u, "/tickets/new", {"title": "x", "category_id": "1", "priority": "5", "description": "x"}, content_type="multipart/form-data")
 ok(post(u, "/tickets/new", {"title": "x", "category_id": "1", "priority": "5", "description": "x", "asset_tag": "NOPE"}, content_type="multipart/form-data"), "was found")
@@ -279,51 +285,74 @@ print("dashboard charts ok")
 # ---------- housekeeping: escalation, overdue, auto-close, approval reminder, recurring, backup
 with app.app_context():
     db = A.get_db()
-    old = A.now(timedelta(hours=-6)); older = A.now(timedelta(days=-10)); yest = (date.today() - timedelta(days=1)).isoformat()
+    old = A.now(timedelta(hours=-6)); older = A.now(timedelta(days=-10)); yest = (local_today() - timedelta(days=1)).isoformat()
     db.execute("UPDATE tickets SET updated_at=?, created_at=? WHERE title='x'", (old, old))   # normal new ticket, 6h old
     db.execute("INSERT INTO tickets (code,title,status,requester_id,priority,due_date,created_at,updated_at,assigned_to) VALUES ('IT-T-1','Overdue job','in_progress',4,5,?,?,?,2)", (yest, old, old))
     db.execute("INSERT INTO tickets (code,title,status,requester_id,priority,created_at,updated_at) VALUES ('IT-T-2','Old resolved','resolved',4,5,?,?)", (older, older))
     db.execute("INSERT INTO tickets (code,title,status,requester_id,priority,created_at,updated_at) VALUES ('IT-T-3','Old approval','pending_approval',4,5,?,?)", (older, older))
     db.commit()
-post(admin, "/admin/recurring", {"title": "Monthly server check", "category_id": "11", "frequency": "monthly", "next_run": date.today().isoformat(), "lead_days": "2", "assigned_to": "2", "priority": "6"})
+post(admin, "/admin/recurring", {"title": "Monthly server check", "category_id": "11", "frequency": "monthly", "next_run": local_today().isoformat(), "lead_days": "2", "assigned_to": "2", "priority": "6"})
 emails.clear()
 with app.app_context():
     res = A.housekeeping()
 print("housekeeping:", res)
-assert res["escalated"] == 1 and res["overdue"] == 1 and res["auto_closed"] == 1 and res["approval_reminders"] == 1 and res["recurring"] == 1 and res["backup"] != "-"
+assert res["escalated"] == 1 and res["overdue"] == 1 and res["auto_closed"] == 1 and res["approval_reminders"] == 1 and res["recurring"] == 1
+assert res["backup"] != "-", res                                         # PostgreSQL: GitHub upload (faked below)
 assert q("SELECT status FROM tickets WHERE code='IT-T-2'")[0][0] == "closed"
-nr = q("SELECT next_run FROM recurring_tasks")[0][0]; assert nr > date.today().isoformat(), nr
+nr = q("SELECT next_run FROM recurring_tasks")[0][0]; assert nr > local_today().isoformat(), nr
 assert q("SELECT COUNT(*) FROM tickets WHERE title='Monthly server check' AND assigned_to=2")[0][0] == 1
 with app.app_context():
     res2 = A.housekeeping()
 assert res2["escalated"] == 0 and res2["overdue"] == 0 and res2["recurring"] == 0 and res2["backup"] == "-", res2   # idempotent
-bk = sorted(os.listdir(os.path.join(d, "bk")), reverse=True); assert len(bk) >= 1
-z = zipfile.ZipFile(os.path.join(d, "bk", bk[0])); assert "portal.db" in z.namelist()
-assert admin.get(f"/admin/backups/{bk[0]}").status_code == 200 and admin.get("/admin/backups/../t.db").status_code == 404
+if IS_PG:
+    name, data = github_uploads[-1]
+    assert name.startswith("adust-it-backup-") and "tickets.json" in zipfile.ZipFile(io.BytesIO(data)).namelist()
+else:
+    bk = sorted(os.listdir(os.path.join(d, "bk")), reverse=True); assert len(bk) >= 1
+    z = zipfile.ZipFile(os.path.join(d, "bk", bk[0])); assert "portal.db" in z.namelist()
+    assert admin.get(f"/admin/backups/{bk[0]}").status_code == 200 and admin.get("/admin/backups/../t.db").status_code == 404
 print("housekeeping ok")
 
-# ---------- backups: second copy + monthly backups kept forever
-copy_dir = os.path.join(d, "offsite")
-app.config["BACKUP_COPY_FOLDER"] = copy_dir
-bkdir = os.path.join(d, "bk")
-fake = []
-for stamp in ["20250105-020000", "20250120-020000", "20250203-020000", "20250228-020000", "20250310-020000"]:
-    pth = os.path.join(bkdir, f"adust-it-backup-{stamp}.zip")
-    open(pth, "wb").write(b"old")
-    t = time.mktime(time.strptime(stamp, "%Y%m%d-%H%M%S")); os.utime(pth, (t, t)); fake.append(os.path.basename(pth))
+# ---------- full JSON backup: export, wipe, restore (both databases)
+ok(admin.get("/admin/backups"), "Backups")
+exp = admin.get("/admin/backups/export.zip"); assert exp.status_code == 200 and exp.headers["Content-Type"] == "application/zip"
+before = {t: q(f"SELECT COUNT(*) FROM {t}")[0][0] for t in ("users", "tickets", "approvals", "assets", "files" if IS_PG else "tickets")}
+attach_before = it.get(f"/approvals/{a_ids[1]}/file").data
 with app.app_context():
-    newest = os.path.basename(A.make_backup())
-left = set(os.listdir(bkdir))
-assert {"adust-it-backup-20250105-020000.zip", "adust-it-backup-20250203-020000.zip", "adust-it-backup-20250310-020000.zip"} <= left, left
-assert "adust-it-backup-20250120-020000.zip" not in left, left   # 0228 survives: newest 3 are always kept
-assert newest in os.listdir(copy_dir)
-ok(admin.get("/admin/backups"), "Backups (copy 2)", copy_dir)
-app.config["BACKUP_COPY_FOLDER"] = "/proc/forbidden/place"
-with app.app_context():
-    A.make_backup()
-ok(admin.get("/admin/backups"), "failed")
-app.config["BACKUP_COPY_FOLDER"] = ""
-print("backup retention + copy ok")
+    A.get_db().execute("DELETE FROM ticket_updates"); A.get_db().execute("DELETE FROM approvals"); A.get_db().commit()
+    counts = A.restore_backup(exp.data)
+after = {t: q(f"SELECT COUNT(*) FROM {t}")[0][0] for t in before}
+assert before == after, (before, after)
+assert it.get(f"/approvals/{a_ids[1]}/file").data == attach_before == b"%PDF-1.4 demand"
+assert it.get(f"/approvals/{a_ids[1]}/signature").data == png               # signatures survive a restore
+ok(post(u, "/tickets/new", {"title": "after restore", "category_id": "1", "priority": "5", "description": "x"}, content_type="multipart/form-data"), "has been sent")
+print("export / restore ok:", counts["tickets"], "tickets")
+
+# ---------- backups: second copy + monthly backups kept forever (local server only)
+if IS_PG:
+    print("backup retention + copy skipped (PostgreSQL keeps backups on GitHub)")
+if not IS_PG:
+    copy_dir = os.path.join(d, "offsite")
+    app.config["BACKUP_COPY_FOLDER"] = copy_dir
+    bkdir = os.path.join(d, "bk")
+    fake = []
+    for stamp in ["20250105-020000", "20250120-020000", "20250203-020000", "20250228-020000", "20250310-020000"]:
+        pth = os.path.join(bkdir, f"adust-it-backup-{stamp}.zip")
+        open(pth, "wb").write(b"old")
+        t = time.mktime(time.strptime(stamp, "%Y%m%d-%H%M%S")); os.utime(pth, (t, t)); fake.append(os.path.basename(pth))
+    with app.app_context():
+        newest = os.path.basename(A.make_backup())
+    left = set(os.listdir(bkdir))
+    assert {"adust-it-backup-20250105-020000.zip", "adust-it-backup-20250203-020000.zip", "adust-it-backup-20250310-020000.zip"} <= left, left
+    assert "adust-it-backup-20250120-020000.zip" not in left, left   # 0228 survives: newest 3 are always kept
+    assert newest in os.listdir(copy_dir)
+    ok(admin.get("/admin/backups"), "Backups (copy 2)", copy_dir)
+    app.config["BACKUP_COPY_FOLDER"] = "/proc/forbidden/place"
+    with app.app_context():
+        A.make_backup()
+    ok(admin.get("/admin/backups"), "failed")
+    app.config["BACKUP_COPY_FOLDER"] = ""
+    print("backup retention + copy ok")
 
 # ---------- reports & exports
 ok(admin.get("/admin/reports?range=all"), "IT staff performance", "ADUST-PC-0001", "4.0")
