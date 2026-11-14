@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% block title %}{{ _('Committees') }}{% endblock %}
+{% block content %}
+<h1>{{ _('Departmental committees') }}</h1>
+<p class="muted">{{ _('Roles, responsibilities, outputs and coordination of every committee, and who serves on it.') }}</p>
+{% for dept in departments %}
+<div class="card">
+  <h2>{{ dept }}</h2>
+  <table>
+    <thead><tr><th>#</th><th>{{ _('Committee') }}</th><th>{{ _('Head of the Committee') }}</th><th>{{ _('Members') }}</th></tr></thead>
+    <tbody>
+    {% for c in rows if c.department == dept %}
+    <tr>
+      <td data-label="#">{{ c.number }}</td>
+      <td data-label="{{ _('Committee') }}"><a href="{{ url_for('committee_detail', committee_id=c.id) }}"><strong>{{ c.name }}</strong></a>
+        {% if c.id in mine %}<span class="badge st-resolved">{{ _('You are a member') }}</span>{% endif %}
+        {% if not c.formal %}<span class="badge st-on_hold">{{ _('Not a formal committee') }}</span>{% endif %}
+        {% if c.tags %}<br><small class="muted">{{ c.tags }}</small>{% endif %}</td>
+      <td data-label="{{ _('Head of the Committee') }}">{{ c.head or '—' }}</td>
+      <td data-label="{{ _('Members') }}">{{ c.members }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card"><p class="muted">{{ _('No committees have been set up yet.') }}</p></div>
+{% endfor %}
+{% endblock %}

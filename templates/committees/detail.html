@@ -1,0 +1,57 @@
+{% extends "base.html" %}{% block title %}{{ c.name }}{% endblock %}
+{% block content %}
+<div class="row-between"><a href="{{ url_for('committees_index') }}">&larr; {{ _('Committees') }}</a></div>
+<div class="card">
+  <p class="muted">{{ c.department }} · {{ _('Committee') }} {{ c.number }}</p>
+  <h1>{{ c.name }}</h1>
+  {% if c.tags %}<p class="muted">{{ c.tags }}</p>{% endif %}
+  {% if c.note %}<p class="hint">{{ c.note }}</p>{% endif %}
+</div>
+
+<div class="card">
+  <h2>{{ _('Members') }} ({{ members|length }})</h2>
+  {% if members %}
+  <table>
+    <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Role') }}</th><th></th></tr></thead>
+    <tbody>
+    {% for m in members %}
+    <tr>
+      <td data-label="{{ _('Name') }}"><strong>{{ m.user_name or m.member_name }}</strong>
+        {% if m.designation %}<br><small class="muted">{{ m.designation }}</small>{% elif not m.user_id %}<br><small class="muted">{{ _('External member') }}</small>{% endif %}</td>
+      <td data-label="{{ _('Role') }}"><span class="badge {{ 'st-resolved' if m.role == 'head' else 'st-on_hold' }}">{{ _(roles[m.role]) }}</span></td>
+      <td class="actions">{% if can_manage %}<form method="post" class="inline" action="{{ url_for('committee_remove_member', committee_id=c.id, member_id=m.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn small" onclick="return confirm('{{ _('Remove this member?') }}')">{{ _('Remove') }}</button></form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">{{ _('No members have been added yet.') }}</p>{% endif %}
+  {% if can_manage %}
+  <form method="post" class="grid" action="{{ url_for('committee_add_member', committee_id=c.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>{{ _('Person') }}
+      <select name="user_id"><option value="">—</option>
+        {% for u in people %}<option value="{{ u.id }}">{{ u.name }}{% if u.designation %} — {{ u.designation }}{% endif %}{% if u.department and u.department|lower != c.department|lower %} ({{ u.department }}){% endif %}</option>{% endfor %}
+      </select></label>
+    <label>{{ _('or external member (name, organisation)') }} <input name="member_name" maxlength="200"></label>
+    <label>{{ _('Role') }}
+      <select name="role">{% for k, v in roles.items() %}<option value="{{ k }}" {{ 'selected' if k == 'member' }}>{{ _(v) }}</option>{% endfor %}</select></label>
+    <div class="grid-end"><button class="btn primary">{{ _('Add member') }}</button></div>
+  </form>
+  {% endif %}
+</div>
+
+{% for s in sections %}
+<details class="card committee-section" {{ 'open' if loop.index <= 2 }}>
+  <summary><h2>{{ loop.index }}. {{ s.title }}</h2></summary>
+  {% set ns = namespace(open=false) %}
+  {% for kind, text in s.blocks %}
+    {% if kind == 'li' and not ns.open %}<ul>{% set ns.open = true %}{% endif %}
+    {% if kind != 'li' and ns.open %}</ul>{% set ns.open = false %}{% endif %}
+    {% if kind == 'li' %}<li>{{ text }}</li>{% else %}<p>{{ text }}</p>{% endif %}
+  {% endfor %}
+  {% if ns.open %}</ul>{% endif %}
+</details>
+{% endfor %}
+{% endblock %}

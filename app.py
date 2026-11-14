@@ -321,12 +321,36 @@ def init_db():
             db.execute("INSERT OR IGNORE INTO categories (name, needs_approval, needs_registrar) VALUES (?, ?, ?)",
                        (name, needs_approval, needs_registrar))
             db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", ("added_cat_" + key, "1"))
+    seed_committees(db)
     sync_departments(db)
     db.executemany("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", DEFAULT_SETTINGS.items())
     db.commit()
     if not IS_PG:  # with PostgreSQL, files and backups are kept in the database / GitHub
         for folder in ("UPLOAD_FOLDER", "BACKUP_FOLDER"):
             os.makedirs(app.config[folder], exist_ok=True)
+
+
+COMMITTEE_SETS = [("committees_eee", "committees_eee.json")]
+COMMITTEE_ROLES = {"head": "Head of the Committee", "member": "Member", "advisor": "Faculty Advisor / Advisor"}
+
+
+def seed_committees(db):
+    """Load the departmental committees and their responsibilities (data/*.json) once.
+    Later edits and deletions are kept: a set is never loaded a second time."""
+    for key, filename in COMMITTEE_SETS:
+        if db.execute("SELECT 1 FROM settings WHERE key = ?", ("seeded_" + key,)).fetchone():
+            continue
+        path = os.path.join(BASE_DIR, "data", filename)
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        for c in data["committees"]:
+            db.execute("INSERT OR IGNORE INTO committees (department, number, name, tags, note, formal, sort, content) "
+                       "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                       (data["department"], c["number"], c["name"], c.get("tags", ""), c.get("note", ""),
+                        c.get("formal", 1), c.get("sort", 0), json.dumps(c["sections"], ensure_ascii=False)))
+        db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", ("seeded_" + key, "1"))
 
 
 # Columns added after the first release: (table, column, definition).
@@ -2044,6 +2068,107 @@ def api_notifications():
 # Help centre (knowledge base)
 # --------------------------------------------------------------------------
 
+def can_manage_committee(committee):
+    """IT admins, and the chairman / head / coordinator of the committee's own department."""
+    if g.user is None:
+        return False
+    if is_admin():
+        return True
+    return (g.user["approver_title"] in ("chairman", "head", "coordinator")
+            and (g.user["department"] or "").lower() == (committee["department"] or "").lower())
+
+
+@app.route("/committees")
+@login_required
+def committees_index():
+    db = get_db()
+    rows = db.execute(
+        "SELECT c.*, (SELECT COUNT(*) FROM committee_members m WHERE m.committee_id = c.id) AS members, "
+        "(SELECT COALESCE(u.name, m.member_name) FROM committee_members m LEFT JOIN users u ON u.id = m.user_id "
+        " WHERE m.committee_id = c.id AND m.role = 'head' ORDER BY m.id LIMIT 1) AS head "
+        "FROM committees c WHERE c.active = 1 ORDER BY c.department, c.sort, c.name").fetchall()
+    mine = {r[0] for r in db.execute("SELECT committee_id FROM committee_members WHERE user_id = ?", (g.user["id"],))}
+    mydept = (g.user["department"] or "").lower()
+    departments = []
+    for r in rows:
+        if r["department"] not in departments:
+            departments.append(r["department"])
+    departments.sort(key=lambda d: (d.lower() != mydept, d))
+    return render_template("committees/index.html", rows=rows, mine=mine, departments=departments)
+
+
+@app.route("/committees/<int:committee_id>")
+@login_required
+def committee_detail(committee_id):
+    db = get_db()
+    c = db.execute("SELECT * FROM committees WHERE id = ?", (committee_id,)).fetchone()
+    if c is None or (not c["active"] and not is_admin()):
+        abort(404)
+    members = db.execute(
+        "SELECT m.*, u.name AS user_name, u.designation, u.email FROM committee_members m "
+        "LEFT JOIN users u ON u.id = m.user_id WHERE m.committee_id = ? "
+        "ORDER BY CASE m.role WHEN 'head' THEN 0 WHEN 'advisor' THEN 1 ELSE 2 END, m.id", (committee_id,)).fetchall()
+    sections = json.loads(c["content"] or "[]")
+    people = []
+    if can_manage_committee(c):
+        taken = {m["user_id"] for m in members if m["user_id"]}
+        people = [u for u in db.execute("SELECT id, name, designation, department FROM users WHERE active = 1 "
+                                        "AND approved = 1 ORDER BY name") if u["id"] not in taken]
+        dept = c["department"].lower()
+        people.sort(key=lambda u: ((u["department"] or "").lower() != dept, u["name"].lower()))
+    return render_template("committees/detail.html", c=c, members=members, sections=sections,
+                           can_manage=can_manage_committee(c), people=people, roles=COMMITTEE_ROLES)
+
+
+@app.route("/committees/<int:committee_id>/members", methods=["POST"])
+@login_required
+def committee_add_member(committee_id):
+    db = get_db()
+    c = db.execute("SELECT * FROM committees WHERE id = ?", (committee_id,)).fetchone()
+    if c is None:
+        abort(404)
+    if not can_manage_committee(c):
+        abort(403)
+    f = request.form
+    role = f.get("role") if f.get("role") in COMMITTEE_ROLES else "member"
+    external = f.get("member_name", "").strip()
+    user_id = int(f["user_id"]) if f.get("user_id", "").isdigit() else None
+    person = db.execute("SELECT id, name FROM users WHERE id = ? AND active = 1", (user_id,)).fetchone() if user_id else None
+    if person is None and not external:
+        flash(_("Choose a person, or type the name of an external member."), "error")
+    elif person is not None and db.execute("SELECT 1 FROM committee_members WHERE committee_id = ? AND user_id = ?",
+                                           (committee_id, person["id"])).fetchone():
+        flash(_("{name} is already a member.", name=person["name"]), "error")
+    else:
+        if role == "head" and person is not None:  # one head: the previous head stays on as a member
+            db.execute("UPDATE committee_members SET role = 'member' WHERE committee_id = ? AND role = 'head'", (committee_id,))
+        db.execute("INSERT INTO committee_members (committee_id, user_id, member_name, role, created_at) "
+                   "VALUES (?, ?, ?, ?, ?)", (committee_id, person["id"] if person else None,
+                                              "" if person else external[:200], role, now()))
+        if person is not None and person["id"] != g.user["id"]:
+            db.execute("INSERT INTO notifications (user_id, ticket_id, message, created_at) VALUES (?, NULL, ?, ?)",
+                       (person["id"], f"You have been added to the {c['name']} ({c['department']}) as "
+                                      f"{COMMITTEE_ROLES[role]}.", now()))
+        db.commit()
+        flash(_("Member added."), "success")
+    return redirect(url_for("committee_detail", committee_id=committee_id))
+
+
+@app.route("/committees/<int:committee_id>/members/<int:member_id>/remove", methods=["POST"])
+@login_required
+def committee_remove_member(committee_id, member_id):
+    db = get_db()
+    c = db.execute("SELECT * FROM committees WHERE id = ?", (committee_id,)).fetchone()
+    if c is None:
+        abort(404)
+    if not can_manage_committee(c):
+        abort(403)
+    db.execute("DELETE FROM committee_members WHERE id = ? AND committee_id = ?", (member_id, committee_id))
+    db.commit()
+    flash(_("Member removed."), "success")
+    return redirect(url_for("committee_detail", committee_id=committee_id))
+
+
 @app.route("/help")
 @login_required
 def help_index():
@@ -2708,7 +2833,8 @@ def prune_backups(folder):
 
 # Tables in the order a restore must insert them (parents before children).
 BACKUP_TABLES = ["users", "departments", "categories", "assets", "recurring_tasks", "tickets", "ticket_updates",
-                 "approvals", "notifications", "announcements", "kb_articles", "allowed_networks", "settings", "files"]
+                 "approvals", "notifications", "announcements", "kb_articles", "allowed_networks", "settings", "files",
+                 "committees", "committee_members"]
 
 
 def export_backup():
@@ -2751,13 +2877,14 @@ def restore_backup(data):
                 with open(os.path.join(app.config["UPLOAD_FOLDER"], os.path.basename(n)), "wb") as fh:
                     fh.write(z.read(n))
     for table in reversed(BACKUP_TABLES):
-        db.execute(f"DELETE FROM {table}")
+        if table in tables:  # tables missing from an older backup (e.g. committees) are left as they are
+            db.execute(f"DELETE FROM {table}")
     for table in BACKUP_TABLES:
         for row in tables.get(table, []):
             cols = list(row)
             vals = [base64.b64decode(v["__b64__"]) if isinstance(v, dict) and "__b64__" in v else v for v in row.values()]
             db.execute(f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", vals)
-        if IS_PG and table != "settings":
+        if IS_PG and table != "settings" and table in tables:
             db.execute(f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), COALESCE((SELECT MAX(id) FROM {table}), 0) + 1, false)")
     db.commit()
     return {t: len(r) for t, r in tables.items()}
