@@ -69,6 +69,11 @@ DEFAULT_CATEGORIES = [
     ("Lab setup", 0), ("Server / Database", 0), ("Data / Report request", 0),
     ("New equipment / Purchase", 1, 1), ("Maintenance", 0), ("Other", 0),
 ]
+# Categories added after the first release; existing databases get them once on start-up
+# (department approval only, no Registrar). IT can rename, hide or change them afterwards.
+ADDED_CATEGORIES = [
+    ("small_items", "Accessories / Small items (converter, multi-plug, cable, mouse)", 1, 0),
+]
 
 # University structure, taken from adust.edu.bd (About and Academics menus).
 # (group, name, parent office for approval fallback, skip department approval)
@@ -311,6 +316,11 @@ def init_db():
     if db.execute("SELECT COUNT(*) FROM categories").fetchone()[0] == 0:
         db.executemany("INSERT INTO categories (name, needs_approval, needs_registrar) VALUES (?, ?, ?)",
                        [(c[0], c[1], c[2] if len(c) > 2 else 0) for c in DEFAULT_CATEGORIES])
+    for key, name, needs_approval, needs_registrar in ADDED_CATEGORIES:
+        if not db.execute("SELECT 1 FROM settings WHERE key = ?", ("added_cat_" + key,)).fetchone():
+            db.execute("INSERT OR IGNORE INTO categories (name, needs_approval, needs_registrar) VALUES (?, ?, ?)",
+                       (name, needs_approval, needs_registrar))
+            db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", ("added_cat_" + key, "1"))
     sync_departments(db)
     db.executemany("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", DEFAULT_SETTINGS.items())
     db.commit()
@@ -2491,6 +2501,26 @@ def admin_departments():
             db.execute("UPDATE departments SET active = 1 - active WHERE id = ?", (int(f["toggle"]),))
         elif f.get("skip", "").isdigit():
             db.execute("UPDATE departments SET skip_approval = 1 - skip_approval WHERE id = ?", (int(f["skip"]),))
+        elif f.get("appoint", "").isdigit():
+            # Choose the Chairman / Head / Coordinator of this department from its own people.
+            dept = db.execute("SELECT name FROM departments WHERE id = ?", (int(f["appoint"]),)).fetchone()
+            title = f.get("title", "")
+            who = db.execute("SELECT id, name FROM users WHERE id = ? AND active = 1 AND approved = 1 "
+                             "AND lower(department) = lower(?)",
+                             (int(f.get("user_id") or 0), dept["name"] if dept else "")).fetchone()
+            if dept is None or who is None or title not in ("chairman", "head", "coordinator"):
+                flash(_("Choose a person from this department and a role."), "error")
+            else:
+                if title in PRIMARY_TITLES:  # one chairman / head per department
+                    db.execute("UPDATE users SET approver_title = '', is_approver = 0 WHERE lower(department) = lower(?) "
+                               "AND approver_title IN ('chairman', 'head') AND id != ?", (dept["name"], who["id"]))
+                db.execute("UPDATE users SET approver_title = ?, is_approver = 1 WHERE id = ?", (title, who["id"]))
+                flash(_("{name} is now {role} of {dept}.", name=who["name"], role=_(APPROVER_TITLES[title]),
+                        dept=dept["name"]), "success")
+        elif f.get("unappoint", "").isdigit():
+            db.execute("UPDATE users SET approver_title = '', is_approver = 0 WHERE id = ? "
+                       "AND approver_title IN ('chairman', 'head', 'coordinator')", (int(f["unappoint"]),))
+            flash(_("Approval role removed."), "success")
         elif f.get("name", "").strip():
             grp = f.get("grp") if f.get("grp") in DEPARTMENT_GROUPS else "Other"
             parent = f.get("parent", "").strip()
@@ -2504,13 +2534,15 @@ def admin_departments():
         return redirect(url_for("admin_departments"))
     rows = db.execute(
         "SELECT d.*, (SELECT COUNT(*) FROM users u WHERE lower(u.department) = lower(d.name)) AS people, "
-        "(SELECT group_concat(u.name || ' (' || CASE u.approver_title WHEN 'coordinator' THEN 'Coordinator' "
-        "WHEN 'head' THEN 'Head of office' WHEN 'registrar' THEN 'Registrar' ELSE 'Chairman' END || ')', ', ') FROM users u "
-        "WHERE u.is_approver = 1 AND u.active = 1 "
-        " AND lower(u.department) = lower(d.name)) AS heads FROM departments d ORDER BY d.sort, d.name").fetchall()
+        "d.name AS dname FROM departments d ORDER BY d.sort, d.name").fetchall()
+    people = {}
+    for u in db.execute("SELECT id, name, department, approver_title FROM users WHERE active = 1 AND approved = 1 "
+                        "AND department != '' ORDER BY name"):
+        people.setdefault(u["department"].lower(), []).append(u)
     order = {g: i for i, g in enumerate(DEPARTMENT_GROUPS)}
     rows = sorted(rows, key=lambda r: (order.get(r["grp"], len(order)), r["sort"], r["name"]))
-    return render_template("admin/departments.html", rows=rows, groups=DEPARTMENT_GROUPS)
+    return render_template("admin/departments.html", rows=rows, groups=DEPARTMENT_GROUPS, people=people,
+                           titles={k: v for k, v in APPROVER_TITLES.items() if k in ("chairman", "head", "coordinator")})
 
 
 @app.route("/admin/categories", methods=["GET", "POST"])

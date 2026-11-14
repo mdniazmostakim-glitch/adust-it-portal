@@ -10,7 +10,7 @@
       <select name="parent"><option value="">—</option>{% for d in rows %}<option>{{ d.name }}</option>{% endfor %}</select></label>
     <div class="grid-end"><button class="btn primary">{{ _('Add') }}</button></div>
   </form>
-  <p class="hint">{{ _('Approvals go to the Chairman / Head of office of the requester\'s department or office (Coordinator if there is no chairman). If nobody is set there, they go to the parent office, e.g. Store Section → Registrar, a department → its Dean\'s office. Set approvers by editing the user and choosing an "Approval role".') }}</p>
+  <p class="hint">{{ _('Approvals go to the Chairman / Head of office of the requester\'s department or office (Coordinator if there is no chairman). If nobody is set there, they go to the parent office, e.g. Store Section → Registrar, a department → its Dean\'s office. Choose the Chairman / Coordinator for each row below from the people registered in that department.') }}</p>
 </div>
 <div class="card">
   <table>
@@ -23,7 +23,25 @@
       <td data-label="{{ _('Department') }}">{{ d.name }}{% if d.skip_approval %} <span class="badge st-resolved">{{ _('No approval needed') }}</span>{% endif %}</td>
       <td data-label="{{ _('Parent office') }}"><small class="muted">{{ d.parent or '—' }}</small></td>
       <td data-label="{{ _('People') }}">{{ d.people }}</td>
-      <td data-label="{{ _('Approvers') }}">{{ d.heads or '—' }}</td>
+      {% set plist = people.get(d.name|lower, []) %}
+      <td data-label="{{ _('Approvers') }}">
+        <form method="post" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% for u in plist if u.approver_title in titles %}
+          <span class="badge st-on_hold">{{ u.name }} · {{ _(titles[u.approver_title]) }}
+            <button class="link-btn" name="unappoint" value="{{ u.id }}" title="{{ _('Remove approval role') }}" aria-label="{{ _('Remove approval role') }}">×</button></span>
+          {% endfor %}
+          {% for u in plist if u.approver_title == 'registrar' %}<span class="badge st-resolved">{{ u.name }} · {{ _('Registrar') }}</span>{% endfor %}
+        </form>
+        {% if plist %}
+        <form method="post" class="inline appoint">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <select name="user_id" aria-label="{{ _('Person') }}">{% for u in plist %}<option value="{{ u.id }}">{{ u.name }}</option>{% endfor %}</select>
+          <select name="title" aria-label="{{ _('Approval role') }}">{% for k, v in titles.items() %}<option value="{{ k }}">{{ _(v) }}</option>{% endfor %}</select>
+          <button class="btn small" name="appoint" value="{{ d.id }}">{{ _('Set') }}</button>
+        </form>
+        {% else %}<small class="muted">{{ _('No registered people yet') }}</small>{% endif %}
+      </td>
       <td data-label="{{ _('Status') }}">{{ _('Active') if d.active else _('Hidden') }}</td>
       <td class="actions"><form method="post" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn small" name="skip" value="{{ d.id }}" title="{{ _('Requests from this office need no department approval') }}">{{ _('Require approval') if d.skip_approval else _('No approval needed') }}</button>

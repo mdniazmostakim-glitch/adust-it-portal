@@ -221,7 +221,23 @@ for k in (k2, k3, k4, k5):
 k6 = new_purchase(reg, "Registrar asks for a scanner")                 # registrar's own purchase -> no approval
 post(u, "/tickets/new", {"title": "Keyboard keys stuck", "category_id": "1", "priority": "5", "description": "repair"}, content_type="multipart/form-data")
 assert [r[0] for r in q("SELECT status FROM tickets WHERE title IN ('Registrar asks for a scanner', 'Keyboard keys stuck')")] == ["new", "new"]
-ok(admin.get("/admin/departments"), "Dr. Head CSE (Chairman)", "CSE Coordinator (Coordinator)")
+ok(admin.get("/admin/departments"), "Dr. Head CSE · Chairman", "CSE Coordinator · Coordinator")
+# IT picks the chairman / coordinator from the Departments page
+cse_id = q("SELECT id FROM departments WHERE name = 'Computer Science & Engineering (CSE)'")[0][0]
+head_id, coord_id = q("SELECT id FROM users WHERE email = 'head@adust.edu.bd'")[0][0], q("SELECT id FROM users WHERE email = 'coord@adust.edu.bd'")[0][0]
+ok(post(admin, "/admin/departments", {"appoint": cse_id, "user_id": coord_id, "title": "chairman"}), "is now Chairman of")
+assert q("SELECT approver_title FROM users WHERE id=?", head_id)[0][0] == ""        # the old chairman is replaced
+assert q("SELECT approver_title FROM users WHERE id=?", coord_id)[0][0] == "chairman"
+ok(post(admin, "/admin/departments", {"appoint": cse_id, "user_id": head_id, "title": "coordinator"}), "is now Coordinator of")
+other = q("SELECT id FROM users WHERE department NOT LIKE 'Computer Science%' AND active = 1 AND approved = 1 LIMIT 1")[0][0]
+ok(post(admin, "/admin/departments", {"appoint": cse_id, "user_id": other, "title": "chairman"}), "Choose a person from this department")
+assert q("SELECT approver_title FROM users WHERE id=?", other)[0][0] in ("", "chairman", "coordinator", "head", "registrar") and \
+       q("SELECT COUNT(*) FROM users WHERE id=? AND department LIKE 'Computer Science%' AND approver_title != ''", other)[0][0] == 0
+ok(post(admin, "/admin/departments", {"unappoint": coord_id}), "Approval role removed")
+ok(post(admin, "/admin/departments", {"appoint": cse_id, "user_id": head_id, "title": "chairman"}), "is now Chairman of")
+ok(post(admin, "/admin/departments", {"appoint": cse_id, "user_id": coord_id, "title": "coordinator"}), "is now Coordinator of")
+assert q("SELECT approver_title FROM users WHERE id=?", head_id)[0][0] == "chairman"
+assert post(u, "/admin/departments", {"appoint": cse_id, "user_id": head_id, "title": "chairman"}).status_code in (302, 403)   # staff cannot appoint
 print("chairman/coordinator routing ok")
 
 # ---------- university offices from adust.edu.bd: parent-office fallback, office heads, BoT

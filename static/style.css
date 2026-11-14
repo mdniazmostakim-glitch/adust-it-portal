@@ -339,3 +339,9 @@ a.stat:hover { border-color: var(--accent-border); transform: translateY(-1px); 
 
 .dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 18px; align-items: start; }
 .dash-grid .hbars.compact .hbar-row { grid-template-columns: minmax(90px, 46%) 1fr; }
+
+/* Department approver picker */
+.link-btn { background: none; border: 0; cursor: pointer; font: inherit; color: inherit; padding: 0 0 0 .3rem; opacity: .7; }
+.link-btn:hover { opacity: 1; }
+form.appoint { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .4rem; align-items: center; }
+form.appoint select { max-width: 11rem; }
