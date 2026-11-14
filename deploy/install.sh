@@ -27,7 +27,7 @@ apt-get install -y -qq python3 python3-venv python3-pip nginx >/dev/null
 say "Copying the application to $APP_DIR"
 mkdir -p "$APP_DIR"
 # Code only: never touches the data folder or the settings file.
-for item in app.py db.py i18n.py schema.sql requirements.txt README.md templates static data deploy tests; do
+for item in app.py db.py i18n.py schema.sql requirements.txt README.md templates static deploy tests; do
     rm -rf "${APP_DIR:?}/$item"
     cp -r "$SRC_DIR/$item" "$APP_DIR/"
 done

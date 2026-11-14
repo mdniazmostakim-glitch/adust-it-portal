@@ -345,12 +345,3 @@ a.stat:hover { border-color: var(--accent-border); transform: translateY(-1px); 
 .link-btn:hover { opacity: 1; }
 form.appoint { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .4rem; align-items: center; }
 form.appoint select { max-width: 11rem; }
-
-/* Committees */
-.committee-section summary { cursor: pointer; list-style: none; }
-.committee-section summary::-webkit-details-marker { display: none; }
-.committee-section summary h2 { margin: 0; font-size: 1.05rem; }
-.committee-section summary h2::before { content: "▸"; display: inline-block; width: 1.1em; color: var(--muted, #667); transition: transform .15s; }
-.committee-section[open] summary h2::before { transform: rotate(90deg); }
-.committee-section ul { padding-left: 1.2rem; margin: .6rem 0 0; }
-.committee-section li { margin: .3rem 0; }

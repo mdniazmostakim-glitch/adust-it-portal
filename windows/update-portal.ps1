@@ -25,7 +25,7 @@ $src = Get-ChildItem $Temp -Recurse -Filter app.py | Select-Object -First 1
 if (-not $src) { Write-Host "This ZIP does not contain the portal (app.py missing)." -ForegroundColor Red; exit 1 }
 $src = $src.DirectoryName
 
-$items = "app.py", "db.py", "i18n.py", "schema.sql", "requirements.txt", "README.md", "templates", "static", "data", "windows", "deploy", "tests"
+$items = "app.py", "db.py", "i18n.py", "schema.sql", "requirements.txt", "README.md", "templates", "static", "windows", "deploy", "tests"
 foreach ($item in $items) {
     $from = Join-Path $src $item
     if (Test-Path $from) { Copy-Item $from -Destination $App -Recurse -Force; Write-Host "  updated $item" }

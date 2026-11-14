@@ -23,7 +23,6 @@
   <nav class="nav">
     {{ nav('index', _('Dashboard'), 'home') }}
     {{ nav('ticket_list', _('All requests') if is_it() else _('My requests'), 'list', ('ticket_detail', 'ticket_print')) }}
-    {{ nav('committees_index', _('Committees'), 'users', ('committee_detail',)) }}
     {{ nav('help_index', _('Help centre'), 'help', ('help_article',)) }}
     {% if g.user.is_approver or is_admin() %}{{ nav('approvals', _('Approvals'), 'approve', badge=approvals_count()) }}{% endif %}
     {% if is_it() %}

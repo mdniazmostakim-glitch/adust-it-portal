@@ -202,27 +202,3 @@ CREATE TABLE IF NOT EXISTS files (
     data BLOB NOT NULL,
     created_at TEXT NOT NULL
 );
-
--- Departmental committees (roles & responsibilities) and who serves on them.
-CREATE TABLE IF NOT EXISTS committees (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    department TEXT NOT NULL,
-    number TEXT NOT NULL,
-    name TEXT NOT NULL,
-    tags TEXT NOT NULL DEFAULT '',
-    note TEXT NOT NULL DEFAULT '',
-    formal INTEGER NOT NULL DEFAULT 1,
-    active INTEGER NOT NULL DEFAULT 1,
-    sort INTEGER NOT NULL DEFAULT 0,
-    content TEXT NOT NULL DEFAULT '[]',          -- JSON: sections, each with paragraph / bullet blocks
-    UNIQUE (department, number)
-);
-
-CREATE TABLE IF NOT EXISTS committee_members (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    committee_id INTEGER NOT NULL REFERENCES committees(id) ON DELETE CASCADE,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,   -- NULL for an external member (advisory panels)
-    member_name TEXT NOT NULL DEFAULT '',        -- name and organisation of an external member
-    role TEXT NOT NULL DEFAULT 'member',         -- 'head', 'member', 'advisor'
-    created_at TEXT NOT NULL
-);

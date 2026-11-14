@@ -416,31 +416,4 @@ print("pages ok (both languages)")
 post(admin, "/admin/network", {"cidr": "10.20.0.0/16"})
 assert client("8.8.8.8").get("/login").status_code == 403
 assert client("8.8.8.8").get("/static/img/adust-logo.png").status_code == 200
-# ---- departmental committees
-assert q("SELECT COUNT(*) FROM committees")[0][0] == 18
-assert q("SELECT COUNT(*) FROM committees WHERE department = 'Electrical & Electronic Engineering (EEE)'")[0][0] == 18
-ok(u.get("/committees"), "Program Self-Assessment Committee (PSAC)", "Tabulation &amp; Scrutiny Committee", "Industrial Advisory Panel",
-   "Not a formal committee", "Student Engagement &amp; AEEC Coordination")
-psac = q("SELECT id FROM committees WHERE number = '1'")[0][0]
-ok(u.get(f"/committees/{psac}"), "Roles and Responsibilities of the Head of the Committee", "Key Outputs / Deliverables",
-   "Lead, coordinate, and supervise all PSAC activities.", "Committee Boundaries")
-panel = q("SELECT id FROM committees WHERE number = '9A'")[0][0]
-ok(u.get(f"/committees/{panel}"), "Reporting and Coordination (Both Panels)")
-assert u.get("/committees/99999").status_code == 404
-assert b"Add member" not in u.get(f"/committees/{psac}").data                      # staff cannot manage
-assert u.post(f"/committees/{psac}/members", data={"csrf_token": tok(u), "user_id": "1"}).status_code == 403
-assert head.post(f"/committees/{psac}/members", data={"csrf_token": tok(head), "user_id": "1"}).status_code == 403  # other department
-teacher_id = q("SELECT id FROM users WHERE email = 'eeeteacher@adust.edu.bd'")[0][0]
-ok(post(eeec, f"/committees/{psac}/members", {"user_id": teacher_id, "role": "head"}), "Member added.", "Head of the Committee")
-ok(post(admin, f"/committees/{psac}/members", {"member_name": "Dr. External, Industry Partner", "role": "member"}), "Dr. External, Industry Partner")
-ok(post(admin, f"/committees/{psac}/members", {"user_id": teacher_id, "role": "member"}), "is already a member")
-ok(post(admin, f"/committees/{psac}/members", {"role": "member"}), "Choose a person")
-ok(eeet.get("/committees"), "You are a member")
-assert any("added to the Program Self-Assessment" in r[0] for r in q("SELECT message FROM notifications WHERE user_id = ?", teacher_id))
-mid = q("SELECT id FROM committee_members WHERE member_name != ''")[0][0]
-assert u.post(f"/committees/{psac}/members/{mid}/remove", data={"csrf_token": tok(u)}).status_code == 403
-ok(post(admin, f"/committees/{psac}/members/{mid}/remove"), "Member removed.")
-assert q("SELECT COUNT(*) FROM committee_members")[0][0] == 1
-print("committees ok")
-
 print("ALL OK")
