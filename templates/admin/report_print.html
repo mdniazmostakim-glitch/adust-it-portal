@@ -3,8 +3,9 @@
 <title>{{ _('IT Section report') }} {{ start }} – {{ end }}</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='print.css') }}"></head>
-<body class="report-print">
-<div class="toolbar"><button onclick="window.print()">🖨 {{ _('Print / Save as PDF') }}</button></div>
+<body class="report-print print-doc">
+<div class="toolbar"><button onclick="window.print()">🖨 {{ _('Print / Save as PDF') }}</button>
+  <span class="toolbar-hint">{{ _('Tip: in the print window choose "Save as PDF" and keep "Background graphics" on.') }}</span></div>
 <div class="sheet wide">
   <header class="doc-head">
     <img src="{{ url_for('static', filename='img/adust-logo.png') }}" alt="">
@@ -12,5 +13,6 @@
     <div class="doc-code">{{ start|d }} – {{ end|d }}<br><small>{{ _('Generated') }} {{ today()|d }}</small></div>
   </header>
   {% include "admin/_report_body.html" %}
+  <footer class="doc-foot"><span>{{ _('Printed by') }} {{ g.user.name }} · {{ today()|d }}</span><span>IT Section, ADUST</span></footer>
 </div>
 </body></html>

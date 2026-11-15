@@ -1,10 +1,14 @@
-{% extends "base.html" %}{% from "_macros.html" import ticket_table %}
+{% extends "base.html" %}{% from "_macros.html" import ticket_table, prio %}{% from "_icons.html" import icon %}
 {% block title %}{{ _('Dashboard') }}{% endblock %}
 {% block content %}
-<div class="row-between">
-  <h1>{{ _('IT Section dashboard') if is_it() else _('Welcome, {name}', name=g.user.name|first_name) }}</h1>
-  <a class="btn primary" href="{{ url_for('new_ticket') }}">+ {{ _('New request') }}</a>
-</div>
+<section class="hero">
+  <div>
+    <p class="hero-kicker">{{ today()|d }}</p>
+    <h1>{{ _('IT Section dashboard') if is_it() else _('Welcome, {name}', name=g.user.name|first_name) }}</h1>
+    <p class="hero-sub">{% if is_it() %}{{ _('Everything that needs the IT section, in one place.') }}{% else %}{{ _('Send a request to the IT section and follow it step by step.') }}{% endif %}</p>
+  </div>
+  <a class="btn hero-btn" href="{{ url_for('new_ticket') }}">{{ icon('plus') }} {{ _('New request') }}</a>
+</section>
 {% set pa = pending_accounts_count() %}
 {% if pa %}
 <a class="flash warn block-link" href="{{ url_for('admin_users') }}">👤 {{ _('{n} new account(s) waiting for verification', n=pa) }} →</a>
@@ -14,20 +18,61 @@
 {% endif %}
 <div class="stats">
   {% if is_it() %}
-  <a class="stat highlight" href="{{ url_for('ticket_list', assigned='me') }}"><b>{{ stats.mine }}</b><span>{{ _('Assigned to me') }}</span></a>
-  <a class="stat" href="{{ url_for('ticket_list', status='new') }}"><b>{{ stats.new }}</b><span>{{ _('New') }}</span></a>
-  <a class="stat" href="{{ url_for('ticket_list', assigned='none') }}"><b>{{ stats.unassigned }}</b><span>{{ _('Unassigned') }}</span></a>
-  <a class="stat {{ 'alert' if stats.urgent }}" href="{{ url_for('ticket_list', urgent=1) }}"><b>{{ stats.urgent }}</b><span>{{ _('Urgent') }}</span></a>
-  <a class="stat {{ 'alert' if stats.overdue }}" href="{{ url_for('ticket_list', overdue=1) }}"><b>{{ stats.overdue }}</b><span>{{ _('Overdue') }}</span></a>
-  <a class="stat" href="{{ url_for('ticket_list', status='resolved') }}"><b>{{ stats.resolved }}</b><span>{{ _('Resolved / closed') }}</span></a>
+  <a class="stat highlight" href="{{ url_for('ticket_list', assigned='me') }}"><i class="stat-ico">{{ icon('user') }}</i><b>{{ stats.mine }}</b><span>{{ _('Assigned to me') }}</span></a>
+  <a class="stat tone-blue" href="{{ url_for('ticket_list', status='new') }}"><i class="stat-ico">{{ icon('inbox') }}</i><b>{{ stats.new }}</b><span>{{ _('New') }}</span></a>
+  <a class="stat tone-amber" href="{{ url_for('ticket_list', assigned='none') }}"><i class="stat-ico">{{ icon('users') }}</i><b>{{ stats.unassigned }}</b><span>{{ _('Unassigned') }}</span></a>
+  <a class="stat tone-red {{ 'alert' if stats.urgent }}" href="{{ url_for('ticket_list', urgent=1) }}"><i class="stat-ico">{{ icon('flame') }}</i><b>{{ stats.urgent }}</b><span>{{ _('Urgent') }}</span></a>
+  <a class="stat tone-red {{ 'alert' if stats.overdue }}" href="{{ url_for('ticket_list', overdue=1) }}"><i class="stat-ico">{{ icon('clock') }}</i><b>{{ stats.overdue }}</b><span>{{ _('Overdue') }}</span></a>
+  <a class="stat tone-green" href="{{ url_for('ticket_list', status='resolved') }}"><i class="stat-ico">{{ icon('check') }}</i><b>{{ stats.resolved }}</b><span>{{ _('Resolved / closed') }}</span></a>
   {% else %}
-  <a class="stat highlight" href="{{ url_for('ticket_list') }}"><b>{{ stats.open }}</b><span>{{ _('Open requests') }}</span></a>
-  {% if stats.pending %}<a class="stat" href="{{ url_for('ticket_list', status='pending_approval') }}"><b>{{ stats.pending }}</b><span>{{ _('Waiting for approval') }}</span></a>{% endif %}
-  <a class="stat" href="{{ url_for('ticket_list', status='new') }}"><b>{{ stats.new }}</b><span>{{ _('Waiting for IT') }}</span></a>
-  <a class="stat" href="{{ url_for('ticket_list', status='in_progress') }}"><b>{{ stats.in_progress }}</b><span>{{ _('In progress') }}</span></a>
-  <a class="stat {{ 'alert' if stats.to_confirm }}" href="{{ url_for('ticket_list', status='resolved') }}"><b>{{ stats.to_confirm }}</b><span>{{ _('Done — please confirm') }}</span></a>
+  <a class="stat highlight" href="{{ url_for('ticket_list') }}"><i class="stat-ico">{{ icon('list') }}</i><b>{{ stats.open }}</b><span>{{ _('Open requests') }}</span></a>
+  {% if stats.pending %}<a class="stat tone-amber" href="{{ url_for('ticket_list', status='pending_approval') }}"><i class="stat-ico">{{ icon('approve') }}</i><b>{{ stats.pending }}</b><span>{{ _('Waiting for approval') }}</span></a>{% endif %}
+  <a class="stat tone-blue" href="{{ url_for('ticket_list', status='new') }}"><i class="stat-ico">{{ icon('inbox') }}</i><b>{{ stats.new }}</b><span>{{ _('Waiting for IT') }}</span></a>
+  <a class="stat tone-violet" href="{{ url_for('ticket_list', status='in_progress') }}"><i class="stat-ico">{{ icon('wrench') }}</i><b>{{ stats.in_progress }}</b><span>{{ _('In progress') }}</span></a>
+  <a class="stat tone-green {{ 'alert' if stats.to_confirm }}" href="{{ url_for('ticket_list', status='resolved') }}"><i class="stat-ico">{{ icon('check') }}</i><b>{{ stats.to_confirm }}</b><span>{{ _('Done — please confirm') }}</span></a>
   {% endif %}
 </div>
+
+<div class="card viz pipeline-card">
+  <div class="row-between">
+    <h2>{{ _('Where requests are now') }}</h2>
+    <span class="viz-sub">{{ _('Every request moves left to right. Click a stage to see those requests.') }}</span>
+  </div>
+  {% set total = pipeline|sum(attribute='n') %}
+  <ol class="pipeline">
+    {% for p in pipeline %}
+    <li class="pl st-{{ p.key }} {{ 'zero' if not p.n }}"><a href="{{ url_for('ticket_list', status=p.key) }}">
+      <b>{{ p.n }}</b><span>{{ _(p.label) }}</span>
+      <i class="pl-bar"><i style="width: {{ (100 * p.n / total)|round(1) if total else 0 }}%"></i></i>
+    </a></li>
+    {% endfor %}
+  </ol>
+</div>
+
+{% if attention %}
+<div class="card attention-card">
+  <div class="row-between">
+    <h2>{{ icon('alert') }} {{ _('Needs attention first') }}</h2>
+    <span class="viz-sub">{{ _('Urgent, overdue or not yet assigned to anyone.') }}</span>
+  </div>
+  <ul class="attention">
+    {% for a in attention %}
+    <li>
+      <a href="{{ url_for('ticket_detail', ticket_id=a.row.id) }}">
+        <span class="att-main"><span class="code">{{ a.row.code }}</span> <strong>{{ a.row.title }}</strong>
+          <small class="muted">{{ a.row.requester_name }} · {{ a.row.requester_dept }}</small></span>
+        <span class="att-tags">
+          {% if a.urgent %}<span class="badge urgent">{{ _('URGENT') }}</span>{% endif %}
+          {% if a.overdue %}<span class="tag tag-red">{{ _('Overdue') }} · {{ a.row.due_date|d }}</span>{% endif %}
+          {% if a.unassigned %}<span class="tag tag-amber">{{ _('Unassigned') }}</span>{% else %}<span class="tag">{{ a.row.assignee_name }}</span>{% endif %}
+          <span class="tag tag-grey">{{ _('{n} day(s) old', n=a.age) }}</span>
+        </span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
 
 {% if dash %}
 {% set d = dash %}
@@ -46,7 +91,7 @@
 
 <div class="card viz">
   <div class="row-between">
-    <h2>{{ _('Requests by category') }}</h2>
+    <div><h2>{{ _('Requests by category') }}</h2><p class="viz-sub">{{ _('Longer bar = more requests. Click a bar to open that category.') }}</p></div>
     <div class="legend">
       <span><i class="sw s1"></i>{{ _('Open') }}</span>
       <span><i class="sw s2"></i>{{ _('Waiting for approval') }}</span>
@@ -76,6 +121,7 @@
 <div class="dash-grid">
   <div class="card viz">
     <h2>{{ _('Requests per month') if d.per_month else _('Requests per day') }}</h2>
+    <p class="viz-sub">{{ _('Each bar is one month. Hover for the numbers.') if d.per_month else _('Each bar is one day. Hover for the numbers.') }}</p>
     <div class="vbars" style="--n: {{ d.series|length }}">
       {% for s in d.series %}
       <span class="vbar" tabindex="0" data-title="{{ s.label }}" data-tip="{{ _('Requests') }}: {{ s.n }};;{{ _('Resolved / closed') }}: {{ s.done }}">
@@ -88,7 +134,7 @@
 
   <div class="card viz">
     <div class="row-between">
-      <h2>{{ _('IT staff workload') }}</h2>
+      <div><h2>{{ _('IT staff workload') }}</h2><p class="viz-sub">{{ _('Open now / done in this period, per person.') }}</p></div>
       <div class="legend"><span><i class="sw s1"></i>{{ _('Open now') }}</span><span><i class="sw s3"></i>{{ _('Done in period') }}</span></div>
     </div>
     <div class="hbars compact">
@@ -111,6 +157,7 @@
 
   <div class="card viz">
     <h2>{{ _('Top requesting departments') }}</h2>
+    <p class="viz-sub">{{ _('Which offices ask for IT help the most.') }}</p>
     {% if d.departments %}
     <div class="hbars compact">
       {% for x in d.departments %}

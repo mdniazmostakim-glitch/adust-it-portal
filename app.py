@@ -142,6 +142,9 @@ STATUSES = {
     "cancelled": "Cancelled",
 }
 OPEN_STATUSES = ("new", "in_progress", "on_hold")
+# How far along a request is, for the progress bars (percent of the journey).
+STAGE_PERCENT = {"pending_approval": 15, "new": 35, "in_progress": 60, "on_hold": 60, "resolved": 85,
+                 "closed": 100, "rejected": 100, "cancelled": 100}
 IT_SETTABLE = ("new", "in_progress", "on_hold", "resolved", "rejected", "closed")
 ROLES = {"user": "Requester", "it": "IT staff", "admin": "IT admin"}
 # Who approves a department's requests. Chairman / head of office come first;
@@ -646,7 +649,7 @@ def department_row(name):
 
 
 app.jinja_env.globals.update(
-    _=_, csrf_token=csrf_token, STATUSES=STATUSES, ROLES=ROLES, OPEN_STATUSES=OPEN_STATUSES,
+    _=_, csrf_token=csrf_token, STATUSES=STATUSES, STAGE_PERCENT=STAGE_PERCENT, ROLES=ROLES, OPEN_STATUSES=OPEN_STATUSES,
     APPROVER_TITLES=APPROVER_TITLES, STAGES=STAGES,
     ASSET_TYPES=ASSET_TYPES, ASSET_STATUSES=ASSET_STATUSES, FREQUENCIES=FREQUENCIES, LEVELS=LEVELS,
     is_it=is_it, is_admin=is_admin, unread_count=unread_count, approvals_count=approvals_count,
@@ -1439,8 +1442,33 @@ def index():
     status_scope = OPEN_STATUSES if is_it() else (*OPEN_STATUSES, "pending_approval", "resolved")
     tickets = db.execute(
         f"{TICKET_SELECT} WHERE {scope} AND t.status IN {status_scope} {TICKET_ORDER} LIMIT 15", args).fetchall()
+    pipeline = [dict(key=k, label=STATUSES[k], n=counts[k]) for k in
+                ("pending_approval", "new", "in_progress", "on_hold", "resolved", "closed")]
     return render_template("dashboard.html", stats=stats, tickets=tickets, approvals=approvals_count(),
-                           dash=it_dashboard_data() if is_it() else None)
+                           dash=it_dashboard_data() if is_it() else None, pipeline=pipeline,
+                           attention=needs_attention() if is_it() else [])
+
+
+def needs_attention(limit=6):
+    """Open requests an IT person should look at first: urgent, overdue or nobody assigned."""
+    today = local_today()
+    rows = get_db().execute(
+        "SELECT t.id, t.code, t.title, t.urgent, t.due_date, t.created_at, t.assigned_to, t.priority, "
+        "r.name AS requester_name, r.department AS requester_dept, a.name AS assignee_name "
+        "FROM tickets t JOIN users r ON r.id = t.requester_id LEFT JOIN users a ON a.id = t.assigned_to "
+        f"WHERE t.status IN {OPEN_STATUSES} AND (t.urgent = 1 OR t.assigned_to IS NULL OR t.due_date < ?) "
+        "ORDER BY t.urgent DESC, t.created_at LIMIT 60", (today.isoformat(),)).fetchall()
+    items = []
+    for r in rows:
+        overdue = bool(r["due_date"]) and r["due_date"] < today.isoformat()
+        try:
+            age = max(0, (today - date.fromisoformat(r["created_at"][:10])).days)
+        except ValueError:
+            age = 0
+        items.append(dict(row=r, urgent=bool(r["urgent"]), overdue=overdue, unassigned=r["assigned_to"] is None, age=age,
+                          score=(0 if r["urgent"] else 1) + (0 if overdue else 1) + (0 if r["assigned_to"] is None else 1)))
+    items.sort(key=lambda i: (i["score"], -i["age"]))
+    return items[:limit]
 
 
 DASH_RANGES = {"7": 7, "30": 30, "90": 90, "all": None}
@@ -1745,6 +1773,66 @@ def can_approve(t):
     return g.user["id"] in approver_ids(requester, include_coordinators=bool(t["escalated_at"]))
 
 
+def ticket_stages(t, approvals, waiting=()):
+    """The journey of a request as steps for the progress tracker:
+    submitted -> department approval -> registrar approval (purchases) -> sent to IT
+    -> in progress -> resolved -> closed. Each step is done, current, hold, rejected,
+    cancelled or todo, with who did it and when."""
+    status = t["status"]
+    last = {}
+    for a in approvals:
+        last[a["stage"]] = a
+    pending = (t["approval_stage"] or "department") if status == "pending_approval" else None
+    cat = None
+    if t["category_id"]:
+        cat = get_db().execute("SELECT needs_registrar FROM categories WHERE id = ?", (t["category_id"],)).fetchone()
+    waiting_names = ", ".join(w["name"] for w in waiting)
+
+    def approval_step(stage, label):
+        a = last.get(stage)
+        if a is not None:
+            ok = a["decision"] == "approved"
+            return dict(label=label, state="done" if ok else "rejected", who=f"{a['approver_name']} ({a['approver_title']})"
+                        if a["approver_title"] else a["approver_name"], when=a["created_at"],
+                        note="" if ok else (a["comment"] or ""))
+        if pending == stage:
+            return dict(label=label, state="current", who=(_("Waiting for: {names}", names=waiting_names) if waiting_names else ""),
+                        when="", note="")
+        return dict(label=label, state="todo", who="", when="", note="")
+
+    steps = [dict(label=_("Submitted"), state="done", who=t["requester_name"], when=t["created_at"], note="")]
+    if "department" in last or pending == "department":
+        steps.append(approval_step("department", _("Department approval")))
+    if "registrar" in last or pending == "registrar" or (pending == "department" and cat and cat["needs_registrar"]):
+        steps.append(approval_step("registrar", _("Registrar approval")))
+    at_it = status not in ("pending_approval", "rejected", "cancelled") or bool(t["first_response_at"] and status != "pending_approval")
+    sent_at = max([a["created_at"] for a in approvals if a["decision"] == "approved"] or [t["created_at"]])
+    in_work = status in ("in_progress", "on_hold", "resolved", "closed")
+    steps.append(dict(
+        label=_("Sent to IT"), state=("current" if status == "new" else "done") if at_it else "todo",
+        who=(t["assignee_name"] or _("Waiting to be assigned")) if at_it else "", when=sent_at if at_it else "",
+        note=""))
+    steps.append(dict(
+        label=_("Work in progress"),
+        state={"in_progress": "current", "on_hold": "hold"}.get(status, "done" if in_work else "todo"),
+        who=_("On hold") if status == "on_hold" else "", when=(t["first_response_at"] or "") if in_work else "", note=""))
+    steps.append(dict(
+        label=_("Work done"), state="current" if status == "resolved" else ("done" if status == "closed" else "todo"),
+        who=_("Waiting for the requester to confirm") if status == "resolved" else "",
+        when=(t["resolved_at"] or "") if status in ("resolved", "closed") else "", note=""))
+    steps.append(dict(
+        label=_("Closed"), state="done" if status == "closed" else "todo", who="",
+        when=t["updated_at"] if status == "closed" else "",
+        note=("★" * t["rating"]) if status == "closed" and t["rating"] else ""))
+    if status in ("rejected", "cancelled") and not any(x["state"] == "rejected" for x in steps):
+        for x in steps:
+            if x["state"] not in ("done",):
+                x["state"] = status
+                x["who"] = x["who"] or _(STATUSES[status])
+                break
+    return steps
+
+
 def load_ticket(ticket_id):
     t = get_db().execute(f"{TICKET_SELECT} WHERE t.id = ?", (ticket_id,)).fetchone()
     if t is None:
@@ -1787,17 +1875,19 @@ def ticket_detail(ticket_id):
         ids = stage_approver_ids(ticket)
         marks = ",".join("?" * len(ids)) or "NULL"
         waiting_on = db.execute(f"SELECT name, approver_title, role FROM users WHERE id IN ({marks})", ids).fetchall()
+    approvals = ticket_approvals(ticket_id)
     return render_template("ticket.html", t=ticket, updates=updates, staff=it_staff(),
                            it_statuses=IT_SETTABLE, can_approve=can_approve(ticket), waiting_on=waiting_on,
-                           approvals=ticket_approvals(ticket_id))
+                           approvals=approvals, stages=ticket_stages(ticket, approvals, waiting_on))
 
 
 @app.route("/tickets/<int:ticket_id>/print")
 @login_required
 def ticket_print(ticket_id):
     ticket = load_ticket(ticket_id)
+    approvals = ticket_approvals(ticket_id)
     return render_template("job_card.html", t=ticket, updates=ticket_timeline(ticket_id, False),
-                           approvals=ticket_approvals(ticket_id))
+                           approvals=approvals, stages=ticket_stages(ticket, approvals))
 
 
 @app.route("/tickets/<int:ticket_id>/approve", methods=["POST"])

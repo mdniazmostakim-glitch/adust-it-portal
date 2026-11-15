@@ -1,9 +1,13 @@
-{% extends "base.html" %}{% from "_macros.html" import status, prio, due, stars %}
+{% extends "base.html" %}{% from "_macros.html" import status, prio, due, stars, tracker %}
 {% block title %}{{ t.code }}{% endblock %}
 {% block content %}
 <div class="row-between">
   <a href="{{ url_for('ticket_list') }}">&larr; {{ _('Requests') }}</a>
   <a class="btn small" href="{{ url_for('ticket_print', ticket_id=t.id) }}" target="_blank">🖨 {{ _('Print job card') }}</a>
+</div>
+<div class="card tracker-card">
+  <h2>{{ _('Where is this request?') }}</h2>
+  {{ tracker(stages) }}
 </div>
 <div class="ticket-layout">
 <div>

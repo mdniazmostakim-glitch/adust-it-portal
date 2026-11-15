@@ -9,6 +9,25 @@
   <div class="stat"><b>{{ s.avg_resolve if s.avg_resolve is not none else '—' }}<small> h</small></b><span>{{ _('Avg. time to resolve') }}</span></div>
   <div class="stat"><b>{{ s.avg_rating or '—' }}<small> / 5</small></b><span>{{ _('Avg. rating ({n})', n=s.ratings) }}</span></div>
 </div>
+{% set total_all = by_status|sum(attribute='n') %}
+{% if total_all %}
+<div class="card status-strip">
+  <h2>{{ _('Where the requests ended up') }}</h2>
+  <div class="strip">{% for r in by_status %}<i class="st-{{ r.status }}" style="flex: {{ r.n }}" title="{{ _(STATUSES[r.status]) }}: {{ r.n }}"></i>{% endfor %}</div>
+  <ul class="strip-legend">{% for r in by_status %}<li><span class="badge st-{{ r.status }}">{{ _(STATUSES[r.status]) }}</span> <b>{{ r.n }}</b> <small class="muted">({{ (100 * r.n / total_all)|round|int }}%)</small></li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% if by_category %}
+<div class="card viz cat-chart">
+  <div class="row-between"><h2>{{ _('Requests by category') }}</h2>
+    <div class="legend"><span><i class="sw s1"></i>{{ _('Open') }}</span><span><i class="sw s3"></i>{{ _('Resolved / closed') }}</span></div></div>
+  {% set top = by_category|map(attribute='total')|max %}
+  <div class="hbars">{% for c in by_category %}
+    <div class="hbar-row"><span class="hbar-label">{{ c.name }}</span>
+      <span class="hbar-track">{% if c.open %}<i class="seg s1" style="width: {{ (100 * c.open / top)|round(2) }}%"></i>{% endif %}{% if c.done %}<i class="seg s3" style="width: {{ (100 * c.done / top)|round(2) }}%"></i>{% endif %}<b class="hbar-val">{{ c.total }}</b></span></div>
+  {% endfor %}</div>
+</div>
+{% endif %}
 <div class="cols">
 <div class="card"><h2>{{ _('IT staff performance') }}</h2>
   <table><thead><tr><th>{{ _('Staff') }}</th><th>{{ _('Total') }}</th><th>{{ _('Open') }}</th><th>{{ _('Done') }}</th><th>{{ _('Avg. resolve') }}</th><th>{{ _('Rating') }}</th></tr></thead><tbody>

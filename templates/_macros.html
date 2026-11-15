@@ -25,10 +25,27 @@
     <td data-label="{{ _('Needed by') }}">{{ due(t) }}</td>
     {% if show_requester %}<td data-label="{{ _('From') }}">{{ t.requester_name }}<br><small class="muted">{{ t.requester_dept }}</small></td>{% endif %}
     <td data-label="{{ _('Assigned to') }}">{{ t.assignee_name or _('IT Section') }}</td>
-    <td data-label="{{ _('Status') }}">{{ status(t.status) }}{% if t.rating %}<br>{{ stars(t.rating) }}{% endif %}</td>
+    <td data-label="{{ _('Status') }}">{{ status(t.status) }}{% if t.rating %}<br>{{ stars(t.rating) }}{% endif %}<br>{{ progress(t) }}</td>
   </tr>
   {% endfor %}
   </tbody>
 </table>
 {% else %}<p class="muted">{{ _('No requests found.') }}</p>{% endif %}
 {% endmacro %}
+
+{% macro tracker(steps) %}
+<ol class="tracker" aria-label="{{ _('Progress of this request') }}">
+  {% for s in steps %}
+  <li class="trk {{ s.state }}"{% if s.state in ('current', 'hold') %} aria-current="step"{% endif %}>
+    <span class="trk-dot" aria-hidden="true">{% if s.state == 'done' %}✓{% elif s.state in ('rejected', 'cancelled') %}✕{% elif s.state == 'hold' %}❚❚{% else %}{{ loop.index }}{% endif %}</span>
+    <span class="trk-body">
+      <b>{{ s.label }}</b>
+      {% if s.who %}<small class="trk-who">{{ s.who }}</small>{% endif %}
+      {% if s.when %}<small class="trk-when">{{ s.when|dt }}</small>{% endif %}
+      {% if s.note %}<small class="trk-note">{{ s.note }}</small>{% endif %}
+    </span>
+  </li>
+  {% endfor %}
+</ol>
+{% endmacro %}
+{% macro progress(t) %}<span class="mini-prog st-{{ t.status }}" role="img" aria-label="{{ _(STATUSES[t.status]) }}" title="{{ _(STATUSES[t.status]) }} · {{ STAGE_PERCENT[t.status] }}%"><i style="width: {{ STAGE_PERCENT[t.status] }}%"></i></span>{% endmacro %}

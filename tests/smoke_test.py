@@ -416,4 +416,19 @@ print("pages ok (both languages)")
 post(admin, "/admin/network", {"cidr": "10.20.0.0/16"})
 assert client("8.8.8.8").get("/login").status_code == 403
 assert client("8.8.8.8").get("/static/img/adust-logo.png").status_code == 200
+# ---- progress tracker, dashboard and printed job card
+ok(admin.get("/"), "Where requests are now", "Needs attention first", "hero")
+ok(u.get("/"), "Where requests are now", "mini-prog")
+ok(admin.get(f"/tickets/{k1}"), "Where is this request?", "Department approval", "Registrar approval", "Sent to IT", "trk done")
+ok(admin.get(f"/tickets/{k1}/print"), "Progress", "Registrar approval", "Printed by", "IT head signature")
+waiting = q("SELECT id FROM tickets WHERE status = 'pending_approval' LIMIT 1")
+if waiting:
+    ok(admin.get(f"/tickets/{waiting[0][0]}"), "trk current", "Waiting for:")
+plain = q("SELECT id FROM tickets WHERE status = 'new' AND approval_stage IS NULL LIMIT 1")
+ok(admin.get(f"/tickets/{plain[0][0]}"), "trk current", "Sent to IT") if plain else None
+with app.app_context():
+    stages = A.ticket_stages(A.get_db().execute(f"{A.TICKET_SELECT} WHERE t.id = ?", (k1,)).fetchone(), A.ticket_approvals(k1))
+assert [x["state"] for x in stages[:3]] == ["done", "done", "done"], stages
+print("tracker ok")
+
 print("ALL OK")
