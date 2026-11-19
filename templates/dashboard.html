@@ -2,12 +2,26 @@
 {% block title %}{{ _('Dashboard') }}{% endblock %}
 {% block content %}
 <section class="hero">
-  <div>
+  <div class="hero-text">
     <p class="hero-kicker">{{ today()|d }}</p>
-    <h1>{{ _('IT Section dashboard') if is_it() else _('Welcome, {name}', name=g.user.name|first_name) }}</h1>
-    <p class="hero-sub">{% if is_it() %}{{ _('Everything that needs the IT section, in one place.') }}{% else %}{{ _('Send a request to the IT section and follow it step by step.') }}{% endif %}</p>
+    <h1>{{ greeting() }}, {{ g.user.name|first_name }}</h1>
+    <p class="hero-sub">{% if is_it() %}{{ _('Here is what needs the IT section today.') }}{% else %}{{ _('Send a request to the IT section and follow it step by step.') }}{% endif %}</p>
+    <ul class="hero-chips">
+      {% if is_it() %}
+      <li><b>{{ today_n.opened }}</b> {{ _('opened today') }}</li>
+      <li><b>{{ today_n.resolved }}</b> {{ _('resolved today') }}</li>
+      <li><b>{{ stats.unassigned }}</b> {{ _('unassigned') }}</li>
+      {% if stats.mine %}<li class="on"><b>{{ stats.mine }}</b> {{ _('assigned to you') }}</li>{% endif %}
+      {% else %}
+      <li><b>{{ stats.open }}</b> {{ _('open requests') }}</li>
+      {% if stats.to_confirm %}<li class="on"><b>{{ stats.to_confirm }}</b> {{ _('waiting for your confirmation') }}</li>{% endif %}
+      {% endif %}
+    </ul>
   </div>
-  <a class="btn hero-btn" href="{{ url_for('new_ticket') }}">{{ icon('plus') }} {{ _('New request') }}</a>
+  <div class="hero-actions">
+    <a class="btn hero-btn" href="{{ url_for('new_ticket') }}">{{ icon('plus') }} {{ _('New request') }}</a>
+    <a class="hero-link" href="{{ url_for('help_index') }}">{{ icon('help') }} {{ _('Help centre') }}</a>
+  </div>
 </section>
 {% set pa = pending_accounts_count() %}
 {% if pa %}
@@ -16,6 +30,25 @@
 {% if approvals %}
 <a class="flash warn block-link" href="{{ url_for('approvals') }}">✍ {{ _('{n} request(s) waiting for your approval', n=approvals) }} →</a>
 {% endif %}
+{% if kpis %}
+<div class="kpis">
+  {% for k in kpis %}
+  <{{ 'a' if k.href else 'div' }} class="kpi tone-{{ k.tone }}" {% if k.href %}href="{{ k.href }}"{% endif %}>
+    <span class="kpi-label">{{ k.label }} <small>{{ k.window }}</small></span>
+    <span class="kpi-value"><b>{{ k.value }}</b>{% if k.unit %}<small>{{ k.unit }}</small>{% endif %}</span>
+    {% if k.delta is not none %}
+    {% set up = k.delta > 0 %}{% set tone = 'flat' if k.delta == 0 or k.good == 'neutral' else ('good' if (up and k.good == 'up') or (not up and k.good == 'down') else 'bad') %}
+    <span class="kpi-delta {{ tone }}">{{ '▲' if up else ('▼' if k.delta < 0 else '■') }} {{ k.delta|abs }}% <small>{{ _('vs previous 7 days') }}</small></span>
+    {% elif k.note is defined %}<span class="kpi-delta flat"><small>{{ k.note }}</small></span>
+    {% else %}<span class="kpi-delta flat"><small>{{ _('no earlier data to compare') }}</small></span>{% endif %}
+    {% if k.spark %}
+    <svg class="spark" viewBox="0 0 110 34" preserveAspectRatio="none" aria-hidden="true"><path class="area" d="{{ k.spark.area }}"/><path class="line" d="{{ k.spark.line }}"/><circle cx="{{ k.spark.last[0] }}" cy="{{ k.spark.last[1] }}" r="2.6"/></svg>
+    {% endif %}
+  </{{ 'a' if k.href else 'div' }}>
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="stats">
   {% if is_it() %}
   <a class="stat highlight" href="{{ url_for('ticket_list', assigned='me') }}"><i class="stat-ico">{{ icon('user') }}</i><b>{{ stats.mine }}</b><span>{{ _('Assigned to me') }}</span></a>
@@ -49,6 +82,7 @@
   </ol>
 </div>
 
+<div class="two-col{{ ' single' if not attention }}">
 {% if attention %}
 <div class="card attention-card">
   <div class="row-between">
@@ -73,6 +107,24 @@
   </ul>
 </div>
 {% endif %}
+<div class="card activity-card">
+  <div class="row-between"><h2>{{ icon('bell') }} {{ _('Recent activity') }}</h2></div>
+  {% if activity %}
+  <ul class="activity">
+    {% for a in activity %}
+    <li>
+      <span class="act-dot {{ 'internal' if a.internal }}"></span>
+      <a href="{{ url_for('ticket_detail', ticket_id=a.tid) }}">
+        <span class="act-line"><strong>{{ _('System') if a.who == 'System' else a.who }}</strong>
+          <span class="muted">{{ a.event or (a.body|truncate(70)) }}</span></span>
+        <span class="act-meta"><span class="code">{{ a.code }}</span> {{ a.title|truncate(42) }} · {{ a.created_at|ago }}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">{{ _('Nothing has happened yet.') }}</p>{% endif %}
+</div>
+</div>
 
 {% if dash %}
 {% set d = dash %}

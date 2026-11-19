@@ -69,13 +69,13 @@ ok(post(admin, f"/admin/users/{uid('fake@gmail.com')}/verify", {"decision": "rej
 assert not q("SELECT 1 FROM users WHERE email='fake@gmail.com'")
 assert it.post(f"/admin/users/1/verify", data={"csrf_token": tok(it), "decision": "approve"}).status_code == 403
 print("account verification ok")
-ok(login(u, "mim@adust.edu.bd", "secret123"), "Welcome, Mim")
+ok(login(u, "mim@adust.edu.bd", "secret123"), ", Mim")
 
 # ---------- any email (personal or institutional) can register and sign in
 g = client()
 ok(post(g, "/register", {"name": "Personal Mail", "email": "someone.personal@gmail.com", "department": "Library", "password": "secret123", "confirm": "secret123"}), "Account created")
 approve("someone.personal@gmail.com")
-ok(login(g, "someone.personal@gmail.com", "secret123"), "Welcome, Personal")
+ok(login(g, "someone.personal@gmail.com", "secret123"), ", Personal")
 ok(post(client(), "/register", {"name": "Bad", "email": "not-an-email", "department": "Library", "password": "secret123", "confirm": "secret123"}), "valid email")
 app.config["ALLOWED_EMAIL_DOMAINS"] = ["adust.edu.bd"]
 ok(post(client(), "/register", {"name": "Y", "email": "y@yahoo.com", "department": "Library", "password": "secret123", "confirm": "secret123"}), "@adust.edu.bd")
@@ -90,7 +90,7 @@ assert r.status_code == 429 and b"Too many failed attempts" in r.data
 print("lockout ok")
 r = app.test_cli_runner().invoke(args=["reset-password", "--user", "MIM@adust.edu.bd", "--password", "fresh12345"])
 assert "Password updated" in r.output, r.output                         # also clears the lock-out
-ok(login(client("10.20.0.77"), "mim@adust.edu.bd", "fresh12345"), "Welcome, Mim")
+ok(login(client("10.20.0.77"), "mim@adust.edu.bd", "fresh12345"), ", Mim")
 assert "No account" in app.test_cli_runner().invoke(args=["reset-password", "--user", "nobody", "--password", "fresh12345"]).output
 post(client("10.20.0.77"), "/forgot", {"identifier": "x"})                # keep the rest of the test independent
 r = app.test_cli_runner().invoke(args=["reset-password", "--user", "mim@adust.edu.bd", "--password", "secret123"])
@@ -104,7 +104,7 @@ path = link[link.index("/reset/"):].split()[0]
 r2 = client()
 ok(post(r2, path, {"new": "newpass123", "confirm": "newpass123"}), "Password updated")
 ok(post(r2, path, {"new": "x" * 9, "confirm": "x" * 9}), "invalid or has expired")   # one-time link
-ok(login(client(), "mim@adust.edu.bd", "newpass123"), "Welcome, Mim")
+ok(login(client(), "mim@adust.edu.bd", "newpass123"), ", Mim")
 ok(post(client(), "/forgot", {"identifier": "nobody@adust.edu.bd"}), "reset link has been sent")  # no account leak
 print("reset ok")
 
@@ -404,7 +404,7 @@ for lang in ("en", "bn"):
             r = c.get(url)
             assert r.status_code == 200, (lang, url, r.status_code, r.data[:500])
     if lang == "bn":
-        ok(u.get("/"), "স্বাগতম", "নতুন অনুরোধ"); ok(admin.get("/admin/settings"), "সেটিংস")
+        ok(u.get("/"), "অনুরোধ পাঠান", "নতুন অনুরোধ"); ok(admin.get("/admin/settings"), "সেটিংস")
 for c in (admin, it, head, u):
     c.get("/lang/en")
 ok(client().get("/lang/bn", follow_redirects=True), "সাইন ইন")
@@ -417,8 +417,10 @@ post(admin, "/admin/network", {"cidr": "10.20.0.0/16"})
 assert client("8.8.8.8").get("/login").status_code == 403
 assert client("8.8.8.8").get("/static/img/adust-logo.png").status_code == 200
 # ---- progress tracker, dashboard and printed job card
-ok(admin.get("/"), "Where requests are now", "Needs attention first", "hero")
-ok(u.get("/"), "Where requests are now", "mini-prog")
+ok(admin.get("/"), "Where requests are now", "Needs attention first", "hero", "Recent activity", "vs previous 7 days", "opened today")
+assert any(g in admin.get("/").data.decode() for g in ("Good morning", "Good noon", "Good afternoon", "Good evening", "Good night"))
+ok(admin.get("/?lang=bn") if False else admin.get("/"), "kpi")
+ok(u.get("/"), "Where requests are now", "mini-prog", "Recent activity")
 ok(admin.get(f"/tickets/{k1}"), "Where is this request?", "Department approval", "Registrar approval", "Sent to IT", "trk done")
 ok(admin.get(f"/tickets/{k1}/print"), "Progress", "Registrar approval", "Printed by", "IT head signature")
 waiting = q("SELECT id FROM tickets WHERE status = 'pending_approval' LIMIT 1")

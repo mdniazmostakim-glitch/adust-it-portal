@@ -649,7 +649,7 @@ def department_row(name):
 
 
 app.jinja_env.globals.update(
-    _=_, csrf_token=csrf_token, STATUSES=STATUSES, STAGE_PERCENT=STAGE_PERCENT, ROLES=ROLES, OPEN_STATUSES=OPEN_STATUSES,
+    _=_, csrf_token=csrf_token, STATUSES=STATUSES, STAGE_PERCENT=STAGE_PERCENT, greeting=lambda: greeting(), ROLES=ROLES, OPEN_STATUSES=OPEN_STATUSES,
     APPROVER_TITLES=APPROVER_TITLES, STAGES=STAGES,
     ASSET_TYPES=ASSET_TYPES, ASSET_STATUSES=ASSET_STATUSES, FREQUENCIES=FREQUENCIES, LEVELS=LEVELS,
     is_it=is_it, is_admin=is_admin, unread_count=unread_count, approvals_count=approvals_count,
@@ -1446,7 +1446,112 @@ def index():
                 ("pending_approval", "new", "in_progress", "on_hold", "resolved", "closed")]
     return render_template("dashboard.html", stats=stats, tickets=tickets, approvals=approvals_count(),
                            dash=it_dashboard_data() if is_it() else None, pipeline=pipeline,
-                           attention=needs_attention() if is_it() else [])
+                           attention=needs_attention() if is_it() else [],
+                           kpis=weekly_kpis() if is_it() else [], today_n=today_numbers() if is_it() else None,
+                           activity=recent_activity())
+
+
+def greeting():
+    """Time-of-day greeting in Bangladesh time."""
+    h = now_dt().hour
+    if 5 <= h < 12:
+        return _("Good morning")
+    if h < 14:
+        return _("Good noon")
+    if h < 17:
+        return _("Good afternoon")
+    if h < 20:
+        return _("Good evening")
+    return _("Good night")
+
+
+@app.template_filter("ago")
+def ago(value):
+    """'2026-11-14 09:30:00' -> '3 h ago'."""
+    try:
+        minutes = int((now_dt() - datetime.strptime(value[:19], "%Y-%m-%d %H:%M:%S")).total_seconds() // 60)
+    except (TypeError, ValueError):
+        return ""
+    if minutes < 1:
+        return _("just now")
+    if minutes < 60:
+        return _("{n} min ago", n=minutes)
+    if minutes < 60 * 24:
+        return _("{n} h ago", n=minutes // 60)
+    return _("{n} d ago", n=minutes // (60 * 24))
+
+
+def sparkline(values, width=110, height=34):
+    """SVG path strings (line and filled area) for a small trend chart."""
+    top = max(max(values), 1)
+    step = width / max(len(values) - 1, 1)
+    pts = [(round(i * step, 1), round(height - 3 - (height - 8) * v / top, 1)) for i, v in enumerate(values)]
+    line = "M" + " L".join(f"{x},{y}" for x, y in pts)
+    return dict(line=line, area=f"{line} L{width},{height} L0,{height} Z", last=pts[-1])
+
+
+def weekly_kpis():
+    """Last 7 days against the 7 days before: opened, resolved, first response, rating."""
+    db = get_db()
+    today = local_today()
+    days = [today - timedelta(days=13 - i) for i in range(14)]
+    since = days[0].isoformat()
+
+    def per_day(column):
+        got = {r["d"]: r["n"] for r in db.execute(
+            f"SELECT substr({column}, 1, 10) AS d, COUNT(*) AS n FROM tickets WHERE {column} >= ? GROUP BY d", (since,))}
+        return [got.get(day.isoformat(), 0) for day in days]
+
+    opened, resolved = per_day("created_at"), per_day("resolved_at")
+
+    def avg_response(a, b):
+        row = db.execute("SELECT ROUND(AVG((julianday(first_response_at) - julianday(created_at)) * 24), 1) AS h "
+                         "FROM tickets WHERE first_response_at IS NOT NULL AND created_at >= ? AND created_at < ?",
+                         (a.isoformat(), b.isoformat())).fetchone()
+        return row["h"]
+
+    tomorrow = today + timedelta(days=1)
+    resp_now, resp_prev = avg_response(days[7], tomorrow), avg_response(days[0], days[7])
+    rating = db.execute("SELECT ROUND(AVG(rating), 1) AS r, COUNT(rating) AS n FROM tickets WHERE rating IS NOT NULL "
+                        "AND created_at >= ?", ((today - timedelta(days=29)).isoformat(),)).fetchone()
+
+    def delta(now_v, prev_v):
+        if now_v is None or prev_v in (None, 0):
+            return None
+        return round(100 * (float(now_v) - float(prev_v)) / float(prev_v))
+
+    return [
+        dict(window=_("last 7 days"), label=_("Opened"), value=sum(opened[7:]), unit="", delta=delta(sum(opened[7:]), sum(opened[:7])), good="neutral",
+             spark=sparkline(opened), href=url_for("ticket_list", status="all"), tone="blue"),
+        dict(window=_("last 7 days"), label=_("Resolved"), value=sum(resolved[7:]), unit="", delta=delta(sum(resolved[7:]), sum(resolved[:7])), good="up",
+             spark=sparkline(resolved), href=url_for("ticket_list", status="resolved"), tone="green"),
+        dict(window=_("last 7 days"), label=_("First response"), value=resp_now if resp_now is not None else "—", unit="h" if resp_now is not None else "",
+             delta=delta(resp_now, resp_prev), good="down", spark=None, href=None, tone="violet"),
+        dict(window=_("last 30 days"), label=_("Satisfaction"), value=rating["r"] if rating["n"] else "—", unit="★" if rating["n"] else "",
+             delta=None, good="up", spark=None, href=None, tone="amber",
+             note=_("{n} ratings in 30 days", n=rating["n"])),
+    ]
+
+
+def recent_activity(limit=8):
+    """Latest updates on the requests this person can see."""
+    where, args = ["1=1"], []
+    if not is_it():
+        where = ["t.requester_id = ?", "u.internal = 0"]
+        args = [g.user["id"]]
+    return get_db().execute(
+        "SELECT u.created_at, u.event, u.body, u.internal, t.id AS tid, t.code, t.title, "
+        "COALESCE(us.name, 'System') AS who FROM ticket_updates u JOIN tickets t ON t.id = u.ticket_id "
+        f"LEFT JOIN users us ON us.id = u.user_id WHERE {' AND '.join(where)} ORDER BY u.id DESC LIMIT {int(limit)}",
+        args).fetchall()
+
+
+def today_numbers():
+    db = get_db()
+    day = local_today().isoformat()
+    return dict(
+        opened=db.execute("SELECT COUNT(*) FROM tickets WHERE created_at >= ?", (day,)).fetchone()[0],
+        resolved=db.execute("SELECT COUNT(*) FROM tickets WHERE resolved_at >= ?", (day,)).fetchone()[0])
 
 
 def needs_attention(limit=6):
