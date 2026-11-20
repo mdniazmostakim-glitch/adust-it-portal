@@ -16,9 +16,9 @@ from app import app
 from db import IS_PG
 local_today = A.local_today          # the portal works in Bangladesh time, whatever this machine's clock is
 emails, sms = [], []
-A.send_email = lambda to, subj, body: emails.append((sorted(to), subj, body))
+A.send_email = lambda to, subj, body, html=None: emails.append((sorted(to), subj, body, html))
 A.send_sms = lambda phones, text: sms.append((sorted(p for p in phones if p), text))
-A.send_email_now = lambda to, subj, body: emails.append((sorted(to), subj, body)) or None
+A.send_email_now = lambda to, subj, body, html=None: emails.append((sorted(to), subj, body, html)) or None
 A.webmail_login = lambda e, p: p == "webmailpw"
 github_uploads = []
 if IS_PG:
@@ -61,11 +61,17 @@ ok(admin.get("/"), "1 new account(s) waiting for verification")
 ok(admin.get("/admin/users"), "New accounts waiting for verification", "Mim Akter")
 ok(admin.get("/notifications"), "New account to verify: Mim Akter")
 assert any(e[0] == ["itadmin@adust.edu.bd"] and "verification" in e[1] for e in emails), emails
+received = [e for e in emails if e[0] == ["mim@adust.edu.bd"]]
+assert received and "received your registration" in received[0][1] and "Registration received" in received[0][3] \
+    and "sent to the IT Section" in received[0][2] and "আইটি সেকশনে পাঠানো" in received[0][2], received
 emails.clear()
 ok(approve("mim@adust.edu.bd"), "Mim Akter can now sign in")
-assert any(e[0] == ["mim@adust.edu.bd"] and "approved" in e[1] for e in emails), emails
+approved = [e for e in emails if e[0] == ["mim@adust.edu.bd"] and "approved" in e[1]]
+assert approved and "Sign in" in approved[0][3] and "/login" in approved[0][2] and "অনুমোদিত" in approved[0][1], emails
+emails.clear()
 bad = client(); post(bad, "/register", {"name": "Fake Person", "email": "fake@gmail.com", "department": "Library", "password": "secret123", "confirm": "secret123"})
 ok(post(admin, f"/admin/users/{uid('fake@gmail.com')}/verify", {"decision": "reject"}), "rejected and removed")
+assert any(e[0] == ["fake@gmail.com"] and "not approved" in e[1] for e in emails), emails
 assert not q("SELECT 1 FROM users WHERE email='fake@gmail.com'")
 assert it.post(f"/admin/users/1/verify", data={"csrf_token": tok(it), "decision": "approve"}).status_code == 403
 print("account verification ok")

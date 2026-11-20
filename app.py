@@ -842,7 +842,7 @@ def render_article(text):
 # Email, SMS and in-portal notifications
 # --------------------------------------------------------------------------
 
-def send_email_now(to_addrs, subject, body):
+def send_email_now(to_addrs, subject, body, html=None):
     """Send one email per recipient. Returns an error message or None."""
     host = env("SMTP_HOST")
     if not host:
@@ -865,6 +865,8 @@ def send_email_now(to_addrs, subject, body):
                 msg = EmailMessage()
                 msg["Subject"], msg["From"], msg["To"] = subject, sender, addr
                 msg.set_content(body)
+                if html:
+                    msg.add_alternative(html, subtype="html")
                 server.send_message(msg)
     except Exception as exc:
         app.logger.warning("Email to %s failed: %s", to_addrs, exc)
@@ -872,12 +874,72 @@ def send_email_now(to_addrs, subject, body):
     return None
 
 
-def send_email(to_addrs, subject, body):
+def send_email(to_addrs, subject, body, html=None):
     if env("SMTP_HOST") and to_addrs:
         if ON_VERCEL:
-            send_email_now(list(to_addrs), subject, body)
+            send_email_now(list(to_addrs), subject, body, html)
         else:
-            threading.Thread(target=send_email_now, args=(list(to_addrs), subject, body), daemon=True).start()
+            threading.Thread(target=send_email_now, args=(list(to_addrs), subject, body, html), daemon=True).start()
+
+
+def account_email(kind, user, base):
+    """Registration received / approved / rejected, in English and Bangla.
+    Returns (subject, plain text, html)."""
+    name = user["name"]
+    login_url = f"{base}/login"
+    texts = {
+        "received": dict(
+            subject="ADUST IT Portal — we received your registration / আপনার নিবন্ধন পাওয়া গেছে",
+            title="Registration received", title_bn="নিবন্ধন পাওয়া গেছে",
+            en=[f"Hello {name},", "Thank you for registering on the ADUST IT Service Request Portal.",
+                "Your request has been sent to the IT Section, who will verify that you are ADUST staff. "
+                "You cannot sign in until it is approved.",
+                "You will get another email at this address as soon as your account is approved."],
+            bn=[f"প্রিয় {name},", "ADUST আইটি সার্ভিস রিকোয়েস্ট পোর্টালে নিবন্ধন করার জন্য ধন্যবাদ।",
+                "আপনার নিবন্ধনের অনুরোধ আইটি সেকশনে পাঠানো হয়েছে। তাঁরা যাচাই করবেন যে আপনি ADUST-এর কর্মী। "
+                "অনুমোদন না হওয়া পর্যন্ত আপনি সাইন ইন করতে পারবেন না।",
+                "অ্যাকাউন্ট অনুমোদন হলেই এই ইমেইলে আরেকটি বার্তা পাবেন।"],
+            button=None),
+        "approved": dict(
+            subject="ADUST IT Portal — your account is approved / আপনার অ্যাকাউন্ট অনুমোদিত হয়েছে",
+            title="Your account is approved", title_bn="আপনার অ্যাকাউন্ট অনুমোদিত হয়েছে",
+            en=[f"Hello {name},", "The IT Section has verified your account on the ADUST IT Service Request Portal. "
+                "You can now sign in and send work requests to the IT Section.",
+                f"Sign in with this email address ({user['email']})"
+                + (f" or your user ID ({user['login_id']})" if user["login_id"] else "") + "."],
+            bn=[f"প্রিয় {name},", "আইটি সেকশন আপনার অ্যাকাউন্ট যাচাই করেছে। এখন আপনি সাইন ইন করে আইটি সেকশনে কাজের অনুরোধ পাঠাতে পারবেন।",
+                f"এই ইমেইল ({user['email']})"
+                + (f" বা ইউজার আইডি ({user['login_id']}) দিয়ে" if user["login_id"] else " দিয়ে") + " সাইন ইন করুন।"],
+            button=("Sign in / সাইন ইন", login_url)),
+        "rejected": dict(
+            subject="ADUST IT Portal — registration not approved / নিবন্ধন অনুমোদিত হয়নি",
+            title="Registration not approved", title_bn="নিবন্ধন অনুমোদিত হয়নি",
+            en=[f"Hello {name},", "We could not verify your registration on the ADUST IT Service Request Portal, "
+                "so the account was not created.",
+                "If you are ADUST staff and think this is a mistake, please contact the IT Section and register again."],
+            bn=[f"প্রিয় {name},", "আমরা আপনার নিবন্ধন যাচাই করতে পারিনি, তাই অ্যাকাউন্ট তৈরি হয়নি।",
+                "আপনি ADUST-এর কর্মী হয়ে থাকলে এবং এটি ভুল মনে করলে আইটি সেকশনের সাথে যোগাযোগ করে আবার নিবন্ধন করুন।"],
+            button=None),
+    }[kind]
+    plain = "\n\n".join(texts["en"]) + (f"\n\n{login_url}" if texts["button"] else "") + "\n\n— — —\n\n" \
+        + "\n\n".join(texts["bn"]) + "\n\n— ADUST IT Section"
+    ink = {"received": "#2f5aa8", "approved": "#157f3c", "rejected": "#c4320a"}[kind]
+    esc = lambda t: (t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    paras = lambda lines: "".join(f'<p style="margin:0 0 12px;line-height:1.6">{esc(x)}</p>' for x in lines)
+    button = (f'<p style="margin:18px 0 6px"><a href="{esc(texts["button"][1])}" style="background:#2f5aa8;color:#ffffff;'
+              f'text-decoration:none;padding:11px 22px;border-radius:8px;font-weight:600;display:inline-block">'
+              f'{esc(texts["button"][0])}</a></p>') if texts["button"] else ""
+    html = f"""<!doctype html><html><body style="margin:0;background:#f3f6fb;font-family:Segoe UI,Roboto,Helvetica,Arial,'Noto Sans Bengali',sans-serif;color:#1d2939">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f6fb;padding:24px 12px"><tr><td align="center">
+<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e4e8f0">
+<tr><td style="background:#1f3461;color:#ffffff;padding:18px 24px"><div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.8">IT Section · Service Request Portal</div>
+<div style="font-size:17px;font-weight:700;margin-top:2px">Atish Dipankar University of Science &amp; Technology</div></td></tr>
+<tr><td style="padding:26px 24px 8px"><div style="border-left:4px solid {ink};padding-left:12px;margin-bottom:18px">
+<div style="font-size:20px;font-weight:700;color:{ink}">{esc(texts['title'])}</div><div style="font-size:15px;color:#667085">{esc(texts['title_bn'])}</div></div>
+{paras(texts['en'])}{button}<hr style="border:0;border-top:1px solid #e4e8f0;margin:18px 0">{paras(texts['bn'])}</td></tr>
+<tr><td style="padding:14px 24px 22px;color:#98a2b3;font-size:12px">This is an automatic message from the ADUST IT Portal. Please do not reply. / এটি একটি স্বয়ংক্রিয় বার্তা, উত্তর দেবেন না।</td></tr>
+</table></td></tr></table></body></html>"""
+    return texts["subject"], plain, html
 
 
 def normalize_phone(phone):
@@ -1234,6 +1296,10 @@ def register():
                 if needs_check:
                     notify_admins_new_account(form["name"].strip(), email, form["department"].strip(),
                                               form.get("designation", "").strip())
+                    new_user = db.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+                    base = app.config["BASE_URL"] or request.host_url.rstrip("/")
+                    subject, plain, html = account_email("received", new_user, base)
+                    send_email([email], subject, plain, html=html)
                     flash(_("Account created. The IT section will verify that you are ADUST staff; "
                             "you will get an email when you can sign in."), "success")
                 else:
@@ -2660,12 +2726,14 @@ def admin_verify_user(user_id):
                    (role, 1 if title else 0, title, user_id))
         db.commit()
         base = app.config["BASE_URL"] or request.host_url.rstrip("/")
-        send_email([user["email"]], "ADUST IT Portal — your account is approved",
-                   f"Hello {user['name']},\n\nYour account on the ADUST IT Service Request Portal has been "
-                   f"verified. You can now sign in:\n{base}/login\n\n— ADUST IT Section")
+        subject, plain, html = account_email("approved", user, base)
+        send_email([user["email"]], subject, plain, html=html)
         flash(_("{name} can now sign in.", name=user["name"]), "success")
     elif request.form.get("decision") == "reject":
         # A rejected sign-up has no requests yet, so the account is simply removed.
+        base = app.config["BASE_URL"] or request.host_url.rstrip("/")
+        subject, plain, html = account_email("rejected", user, base)
+        send_email([user["email"]], subject, plain, html=html)
         db.execute("DELETE FROM users WHERE id = ?", (user_id,))
         db.commit()
         flash(_("Account request from {name} was rejected and removed.", name=user["name"]), "success")
