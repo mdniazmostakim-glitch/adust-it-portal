@@ -570,6 +570,8 @@ BN = {
     "{n} h ago": "{n} ঘণ্টা আগে",
     "{n} min ago": "{n} মিনিট আগে",
     "{n} ratings in 30 days": "৩০ দিনে {n}টি রেটিং",
+    "Switch to dark mode": "ডার্ক মোডে যান",
+    "Switch to light mode": "লাইট মোডে যান",
     "Approvals go to the Chairman / Head of office of the requester's department or office (Coordinator if there is no chairman). If nobody is set there, they go to the parent office, e.g. Store Section → Registrar, a department → its Dean's office. Choose the Chairman / Coordinator for each row below from the people registered in that department.": "অনুমোদন যায় অনুরোধকারীর বিভাগ বা অফিসের চেয়ারম্যান / অফিস প্রধানের কাছে (চেয়ারম্যান না থাকলে কো-অর্ডিনেটরের কাছে)। সেখানে কেউ সেট করা না থাকলে উপরের অফিসে যায়, যেমন Store Section → রেজিস্ট্রার, কোনো বিভাগ → তার ডিনের অফিস। নিচের প্রতিটি সারিতে ওই বিভাগে নিবন্ধিত ব্যক্তিদের মধ্য থেকে চেয়ারম্যান / কো-অর্ডিনেটর বাছাই করুন।",
     "Approvers": "অনুমোদনকারী",
     "Group": "গ্রুপ",

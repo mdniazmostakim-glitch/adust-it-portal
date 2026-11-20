@@ -9,6 +9,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ _('IT Service Portal') }}{% endblock %} · ADUST IT Section</title>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/favicon.png') }}">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    (function () {   // set the theme before the page paints, so there is no light flash in dark mode
+      var t = null;
+      try { t = localStorage.getItem('adust-theme'); } catch (e) {}
+      if (t !== 'light' && t !== 'dark') t = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body class="{{ 'app' if g.user else 'guest' }} {{ 'sidebar-right' if sidebar_side() == 'right' }}">
@@ -63,6 +72,7 @@
     <button class="icon-btn menu-btn" onclick="document.body.classList.toggle('nav-open')" aria-label="Menu">{{ icon('menu') }}</button>
     <div class="top-uni"><img src="{{ url_for('static', filename='img/adust-logo.png') }}" alt=""><span>Atish Dipankar University of Science &amp; Technology</span></div>
     <div class="top-actions">
+      <button type="button" class="icon-btn theme-toggle" data-theme-toggle data-to-dark="{{ _('Switch to dark mode') }}" data-to-light="{{ _('Switch to light mode') }}" title="{{ _('Switch to dark mode') }}" aria-label="{{ _('Switch to dark mode') }}"><span class="ic-moon">{{ icon('moon') }}</span><span class="ic-sun">{{ icon('sun') }}</span></button>
       <a class="chip-btn" href="{{ url_for('set_language', code='en' if g.lang == 'bn' else 'bn') }}">{{ icon('globe') }}<span>{{ 'English' if g.lang == 'bn' else 'বাংলা' }}</span></a>
       {% set unread = unread_count() %}
       <a href="{{ url_for('notifications') }}" class="icon-btn bell" title="{{ _('Notifications') }}">{{ icon('bell') }}<span id="bell-count" class="count"{% if not unread %} hidden{% endif %}>{{ unread }}</span></a>
@@ -70,7 +80,7 @@
     </div>
   </header>
   {% else %}
-  <div class="guest-top"><a class="chip-btn" href="{{ url_for('set_language', code='en' if g.lang == 'bn' else 'bn') }}">{{ icon('globe') }}<span>{{ 'English' if g.lang == 'bn' else 'বাংলা' }}</span></a></div>
+  <div class="guest-top"><button type="button" class="icon-btn theme-toggle" data-theme-toggle data-to-dark="{{ _('Switch to dark mode') }}" data-to-light="{{ _('Switch to light mode') }}" title="{{ _('Switch to dark mode') }}" aria-label="{{ _('Switch to dark mode') }}"><span class="ic-moon">{{ icon('moon') }}</span><span class="ic-sun">{{ icon('sun') }}</span></button><a class="chip-btn" href="{{ url_for('set_language', code='en' if g.lang == 'bn' else 'bn') }}">{{ icon('globe') }}<span>{{ 'English' if g.lang == 'bn' else 'বাংলা' }}</span></a></div>
   {% endif %}
 
   {% for a in active_announcements() %}
@@ -121,5 +131,26 @@
 })();
 </script>
 {% endif %}
+<script>
+(function () {
+  var root = document.documentElement;
+  function sync() {
+    var dark = root.getAttribute('data-theme') === 'dark';
+    document.querySelectorAll('[data-theme-toggle]').forEach(function (b) {
+      var label = dark ? b.getAttribute('data-to-light') : b.getAttribute('data-to-dark');
+      b.title = label; b.setAttribute('aria-label', label); b.setAttribute('aria-pressed', dark ? 'true' : 'false');
+    });
+  }
+  document.querySelectorAll('[data-theme-toggle]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      try { localStorage.setItem('adust-theme', next); } catch (e) {}
+      sync();
+    });
+  });
+  sync();
+})();
+</script>
 </body>
 </html>
