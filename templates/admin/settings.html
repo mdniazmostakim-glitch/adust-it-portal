@@ -12,6 +12,10 @@
       <input type="number" name="escalate_hours_urgent" min="1" value="{{ values.escalate_hours_urgent }}"></label>
     <label>{{ _('Remind the chairman about pending approvals after (hours); after this the coordinator can also approve') }}
       <input type="number" name="approval_remind_hours" min="1" value="{{ values.approval_remind_hours }}"></label>
+    <label>{{ _('Remind the assigned IT person if they post no update for (hours, 0 = off); the IT admins are told after twice this') }}
+      <input type="number" name="stale_update_hours" min="0" value="{{ values.stale_update_hours }}"></label>
+    <label>{{ _('A requester can ask for an update again only after (hours)') }}
+      <input type="number" name="nudge_hours" min="0" value="{{ values.nudge_hours }}"></label>
     <label>{{ _('Close resolved requests automatically if the requester does not respond within (days)') }}
       <input type="number" name="auto_close_days" min="1" value="{{ values.auto_close_days }}"></label>
     <label>{{ _('Keep daily backups for (days)') }}

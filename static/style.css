@@ -600,3 +600,5 @@ a.kpi:hover { box-shadow: var(--shadow-lg); border-color: var(--accent-border); 
 .theme-toggle { border: 1px solid var(--border-strong); background: var(--surface); }
 .theme-toggle:hover { border-color: var(--primary); color: var(--primary); }
 .guest-top { align-items: center; gap: 8px; }
+
+.btn:disabled, .btn[disabled] { opacity: .5; cursor: not-allowed; box-shadow: none; }

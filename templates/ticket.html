@@ -115,8 +115,13 @@
           <input type="file" name="file" class="file-inline">
           <div class="actions">
             <button class="btn primary">{{ _('Send') }}</button>
+            {% if t.status in ('new', 'pending_approval', 'in_progress', 'on_hold') %}<button class="btn" name="action" value="nudge" {{ 'disabled' if nudge_wait }} title="{{ _('Notify the people working on this request and ask for an update') }}">🔔 {{ _('Remind the approver') if t.status == 'pending_approval' else _('Ask for an update') }}</button>{% endif %}
             {% if t.status in ('new', 'pending_approval') %}<button class="btn danger" name="action" value="cancel" onclick="return confirm('{{ _('Cancel this request?') }}')">{{ _('Cancel request') }}</button>{% endif %}
           </div>
+          {% if t.status in ('new', 'pending_approval', 'in_progress', 'on_hold') %}
+          <p class="hint">{% if nudge_wait %}{{ _('You asked for an update recently. You can ask again in {time}.', time=(nudge_wait // 60 ~ ' h ' ~ nudge_wait % 60 ~ ' min') if nudge_wait >= 60 else (nudge_wait ~ ' min')) }}
+            {% else %}{{ _('Waiting too long? Write your question above (optional) and press "Ask for an update". The person working on it and the IT admins are notified at once.') }}{% endif %}</p>
+          {% endif %}
         {% endif %}
       {% endif %}
     </form>
@@ -149,6 +154,8 @@
     <dt>{{ _('Submitted') }}</dt><dd>{{ t.created_at|dt }}</dd>
     {% if t.first_response_at %}<dt>{{ _('First IT response') }}</dt><dd>{{ t.first_response_at|dt }}</dd>{% endif %}
     <dt>{{ _('Last update') }}</dt><dd>{{ t.updated_at|dt }}</dd>
+    {% if t.status in ('new', 'in_progress', 'on_hold') %}<dt>{{ _('Last update from IT') }}</dt><dd>{% if last_it %}{{ last_it|dt }} <small class="muted">· {{ last_it|ago }}</small>{% else %}<span class="muted">{{ _('No update from IT yet') }}</span>{% endif %}</dd>{% endif %}
+    {% if t.nudge_count %}<dt>{{ _('Asked for an update') }}</dt><dd>{{ t.nudge_count }} × <small class="muted">{{ t.nudged_at|ago }}</small></dd>{% endif %}
     {% if t.resolved_at %}<dt>{{ _('Resolved') }}</dt><dd>{{ t.resolved_at|dt }}</dd>{% endif %}
     {% if t.rating %}<dt>{{ _('Rating') }}</dt><dd>{{ stars(t.rating) }}{% if t.rating_comment %}<br><small>“{{ t.rating_comment }}”</small>{% endif %}</dd>{% endif %}
   </dl>

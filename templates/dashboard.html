@@ -98,6 +98,7 @@
         <span class="att-tags">
           {% if a.urgent %}<span class="badge urgent">{{ _('URGENT') }}</span>{% endif %}
           {% if a.overdue %}<span class="tag tag-red">{{ _('Overdue') }} · {{ a.row.due_date|d }}</span>{% endif %}
+          {% if a.nudged %}<span class="tag tag-amber">🔔 {{ _('Asked for an update') }}{% if a.nudged > 1 %} ×{{ a.nudged }}{% endif %}</span>{% endif %}
           {% if a.unassigned %}<span class="tag tag-amber">{{ _('Unassigned') }}</span>{% else %}<span class="tag">{{ a.row.assignee_name }}</span>{% endif %}
           <span class="tag tag-grey">{{ _('{n} day(s) old', n=a.age) }}</span>
         </span>

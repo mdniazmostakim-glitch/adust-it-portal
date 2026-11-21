@@ -168,6 +168,8 @@ DEFAULT_SETTINGS = {
     "escalate_hours": "4",          # a normal request untouched this long is escalated
     "escalate_hours_urgent": "1",   # same, for urgent requests
     "approval_remind_hours": "24",  # remind department heads about pending approvals
+    "stale_update_hours": "48",     # remind the person doing a request if they post no update for this long (0 = off)
+    "nudge_hours": "6",             # a requester can ask for an update again only after this many hours
     "auto_close_days": "7",         # resolved and not confirmed -> closed automatically
     "backup_keep_days": "14",
     "sms_urgent": "1",
@@ -340,6 +342,9 @@ MIGRATIONS = [
     ("users", "signature_stored", "TEXT"),
     ("categories", "needs_registrar", "INTEGER NOT NULL DEFAULT 0"),
     ("tickets", "approval_stage", "TEXT"),
+    ("tickets", "nudged_at", "TEXT"),
+    ("tickets", "nudge_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("tickets", "stale_notified", "TEXT"),
     ("departments", "grp", "TEXT NOT NULL DEFAULT 'Other'"),
     ("departments", "parent", "TEXT NOT NULL DEFAULT ''"),
     ("departments", "skip_approval", "INTEGER NOT NULL DEFAULT 0"),
@@ -1624,10 +1629,10 @@ def needs_attention(limit=6):
     """Open requests an IT person should look at first: urgent, overdue or nobody assigned."""
     today = local_today()
     rows = get_db().execute(
-        "SELECT t.id, t.code, t.title, t.urgent, t.due_date, t.created_at, t.assigned_to, t.priority, "
+        "SELECT t.id, t.code, t.title, t.urgent, t.due_date, t.created_at, t.assigned_to, t.priority, t.nudge_count, "
         "r.name AS requester_name, r.department AS requester_dept, a.name AS assignee_name "
         "FROM tickets t JOIN users r ON r.id = t.requester_id LEFT JOIN users a ON a.id = t.assigned_to "
-        f"WHERE t.status IN {OPEN_STATUSES} AND (t.urgent = 1 OR t.assigned_to IS NULL OR t.due_date < ?) "
+        f"WHERE t.status IN {OPEN_STATUSES} AND (t.urgent = 1 OR t.assigned_to IS NULL OR t.due_date < ? OR t.nudge_count > 0) "
         "ORDER BY t.urgent DESC, t.created_at LIMIT 60", (today.isoformat(),)).fetchall()
     items = []
     for r in rows:
@@ -1637,8 +1642,10 @@ def needs_attention(limit=6):
         except ValueError:
             age = 0
         items.append(dict(row=r, urgent=bool(r["urgent"]), overdue=overdue, unassigned=r["assigned_to"] is None, age=age,
-                          score=(0 if r["urgent"] else 1) + (0 if overdue else 1) + (0 if r["assigned_to"] is None else 1)))
-    items.sort(key=lambda i: (i["score"], -i["age"]))
+                          nudged=r["nudge_count"] or 0,
+                          score=(0 if r["urgent"] else 1) + (0 if overdue else 1) + (0 if r["assigned_to"] is None else 1)
+                          + (0 if r["nudge_count"] else 1)))
+    items.sort(key=lambda i: (0 if i["nudged"] else 1, i["score"], -i["age"]))   # people who asked for an update come first
     return items[:limit]
 
 
@@ -2049,7 +2056,8 @@ def ticket_detail(ticket_id):
     approvals = ticket_approvals(ticket_id)
     return render_template("ticket.html", t=ticket, updates=updates, staff=it_staff(),
                            it_statuses=IT_SETTABLE, can_approve=can_approve(ticket), waiting_on=waiting_on,
-                           approvals=approvals, stages=ticket_stages(ticket, approvals, waiting_on))
+                           approvals=approvals, stages=ticket_stages(ticket, approvals, waiting_on),
+                           nudge_wait=nudge_wait_minutes(ticket), last_it=last_it_update(ticket_id))
 
 
 @app.route("/tickets/<int:ticket_id>/print")
@@ -2151,6 +2159,26 @@ def approvals():
     return render_template("approvals.html", tickets=pending_for_me())
 
 
+def nudge_wait_minutes(t):
+    """Minutes before this requester may ask for an update again (0 = now)."""
+    hours = int_setting("nudge_hours")
+    if not t["nudged_at"] or hours <= 0:
+        return 0
+    try:
+        since = (now_dt() - datetime.strptime(t["nudged_at"][:19], "%Y-%m-%d %H:%M:%S")).total_seconds() / 60
+    except ValueError:
+        return 0
+    return max(0, int(hours * 60 - since))
+
+
+def last_it_update(ticket_id):
+    """When someone from IT last wrote to the requester (internal notes do not count)."""
+    row = get_db().execute(
+        "SELECT MAX(u.created_at) FROM ticket_updates u JOIN users us ON us.id = u.user_id "
+        "WHERE u.ticket_id = ? AND u.internal = 0 AND us.role IN ('it', 'admin')", (ticket_id,)).fetchone()
+    return row[0] if row else None
+
+
 @app.route("/tickets/<int:ticket_id>/update", methods=["POST"])
 @login_required
 def ticket_update(ticket_id):
@@ -2193,6 +2221,16 @@ def ticket_update(ticket_id):
         if action == "cancel" and t["status"] in ("new", "pending_approval"):
             changes["status"] = "cancelled"
             events.append("Cancelled by requester")
+        elif action == "nudge" and t["status"] in ("new", "in_progress", "on_hold", "pending_approval"):
+            wait = nudge_wait_minutes(t)
+            if wait:
+                flash(_("You asked for an update recently. You can ask again in {time}.",
+                        time=(f"{wait // 60} h {wait % 60} min" if wait >= 60 else f"{wait} min")), "error")
+                return redirect(url_for("ticket_detail", ticket_id=ticket_id))
+            changes["nudged_at"] = now()
+            changes["nudge_count"] = (t["nudge_count"] or 0) + 1
+            events.append("Requester asked the approver to respond" if t["status"] == "pending_approval"
+                          else "Requester asked for an update")
         elif action == "confirm" and t["status"] == "resolved":
             changes["status"] = "closed"
             events.append("Requester confirmed the work is done")
@@ -2227,6 +2265,8 @@ def ticket_update(ticket_id):
             t["resolved_at"] if changes["status"] in ("resolved", "closed") else None)
     if is_it() and not internal and not t["first_response_at"] and not is_requester:
         changes["first_response_at"] = ts
+    if is_it() and not internal and not is_requester:
+        changes["nudge_count"] = 0  # IT answered, so the "asked for an update" flag is cleared
     changes["updated_at"] = ts
     db.execute(f"UPDATE tickets SET {', '.join(k + ' = ?' for k in changes)} WHERE id = ?",
                (*changes.values(), ticket_id))
@@ -2235,6 +2275,14 @@ def ticket_update(ticket_id):
 
     t = db.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
     summary = "; ".join(events) or "New comment"
+    if "nudged_at" in changes:
+        ask = f"{g.user['name']} is asking for an update on: {t['title']}" + (f" — “{body[:140]}”" if body else "")
+        if t["status"] == "pending_approval":
+            notify(stage_approver_ids(t), t, ask.replace("an update on", "a decision on"))
+        else:
+            notify(set(it_recipients(t)) | set(it_team_ids(admins_only=True)), t, ask, sms=bool(t["urgent"]))
+        flash(_("We have asked for an update. The people working on your request were notified."), "success")
+        return redirect(url_for("ticket_detail", ticket_id=ticket_id))
     if internal:
         notify(it_recipients(t), t, f"Internal note by {g.user['name']}")
     elif is_it() and not is_requester:
@@ -3152,8 +3200,8 @@ def admin_settings():
             result = housekeeping()
             flash(_("Checks completed: {summary}", summary=", ".join(f"{k}={v}" for k, v in result.items())), "success")
         else:
-            for key in ("escalate_hours", "escalate_hours_urgent", "approval_remind_hours",
-                        "auto_close_days", "backup_keep_days"):
+            for key in ("escalate_hours", "escalate_hours_urgent", "approval_remind_hours", "stale_update_hours",
+                        "nudge_hours", "auto_close_days", "backup_keep_days"):
                 if f.get(key, "").isdigit():
                     set_setting(key, int(f[key]))
             set_setting("sms_urgent", "1" if f.get("sms_urgent") else "0")
@@ -3201,7 +3249,8 @@ def run_recurring(only_id=None):
 
 def housekeeping(include_backup=True):
     db = get_db()
-    result = {"escalated": 0, "overdue": 0, "approval_reminders": 0, "auto_closed": 0, "recurring": 0, "backup": "-"}
+    result = {"escalated": 0, "overdue": 0, "approval_reminders": 0, "auto_closed": 0, "recurring": 0, "stale": 0,
+              "backup": "-"}
 
     # 1. New requests nobody has picked up
     for urgent, key in ((1, "escalate_hours_urgent"), (0, "escalate_hours")):
@@ -3256,6 +3305,31 @@ def housekeeping(include_backup=True):
         notify([t["requester_id"]], t, f"Your request was closed automatically after {days} days. "
                                        "You can still rate it or reopen it.")
         result["auto_closed"] += 1
+
+    # 6. Work that has gone quiet: remind whoever is doing it, and the IT admins when it stays quiet
+    quiet_hours = int_setting("stale_update_hours")
+    if quiet_hours > 0:
+        cutoff = now(timedelta(hours=-quiet_hours))
+        stale = db.execute(
+            "SELECT * FROM (SELECT t.*, COALESCE((SELECT MAX(u.created_at) FROM ticket_updates u JOIN users us "
+            "ON us.id = u.user_id WHERE u.ticket_id = t.id AND u.internal = 0 AND us.role IN ('it', 'admin')), "
+            "t.created_at) AS last_it FROM tickets t WHERE t.status IN ('new', 'in_progress', 'on_hold') "
+            "AND t.assigned_to IS NOT NULL AND (t.stale_notified IS NULL OR t.stale_notified < ?)) x "
+            "WHERE x.last_it < ?", (today, cutoff)).fetchall()
+        for t in stale:
+            try:
+                quiet = now_dt() - datetime.strptime(t["last_it"][:19], "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                continue
+            days = max(1, quiet.days)
+            db.execute("UPDATE tickets SET stale_notified = ? WHERE id = ?", (today, t["id"]))
+            add_update(t["id"], None, f"Reminder sent to IT: no update for {days} day(s)", internal=1)
+            db.commit()
+            notify([t["assigned_to"]], t, f"No update for {days} day(s): {t['title']}. Please post a status update.")
+            if quiet > timedelta(hours=2 * quiet_hours):
+                notify(set(it_team_ids(admins_only=True)) - {t["assigned_to"]}, t,
+                       f"No update from the assignee for {days} day(s): {t['title']}")
+            result["stale"] += 1
 
     # 5. Recurring maintenance tasks
     result["recurring"] = run_recurring()

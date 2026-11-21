@@ -440,4 +440,32 @@ with app.app_context():
 assert [x["state"] for x in stages[:3]] == ["done", "done", "done"], stages
 print("tracker ok")
 
+# ---- requester asks for an update; stale work reminder
+mim_id = q("SELECT id FROM users WHERE email = 'mim@adust.edu.bd'")[0][0]
+post(u, "/tickets/new", {"title": "Slow lab PC", "category_id": "1", "priority": "5", "description": "very slow"}, content_type="multipart/form-data")
+sid = q("SELECT id FROM tickets WHERE title = 'Slow lab PC'")[0][0]
+post(admin, f"/tickets/{sid}/update", {"status": "in_progress", "assigned_to": str(q("SELECT id FROM users WHERE role = 'it' LIMIT 1")[0][0]), "priority": "5", "body": "Looking into it"})
+emails.clear()
+ok(u.get(f"/tickets/{sid}"), "Ask for an update", "Last update from IT")
+ok(post(u, f"/tickets/{sid}/update", {"action": "nudge", "body": "Any news please?"}), "We have asked for an update")
+assert q("SELECT nudge_count FROM tickets WHERE id = ?", sid)[0][0] == 1
+assert any("asking for an update" in e[2] and "Any news please?" in e[2] for e in emails), emails
+ok(admin.get("/"), "Asked for an update")
+ok(admin.get(f"/tickets/{sid}"), "Requester asked for an update")
+ok(post(u, f"/tickets/{sid}/update", {"action": "nudge"}), "You asked for an update recently")      # cooldown
+assert q("SELECT nudge_count FROM tickets WHERE id = ?", sid)[0][0] == 1
+post(admin, f"/tickets/{sid}/update", {"status": "in_progress", "priority": "5", "body": "Replaced the RAM"})
+assert q("SELECT nudge_count FROM tickets WHERE id = ?", sid)[0][0] == 0                            # IT answered
+# quiet work: no IT update for 3 days -> reminder to the assignee, admins told after twice the limit
+with app.app_context():
+    A.get_db().execute("UPDATE ticket_updates SET created_at = ? WHERE ticket_id = ? AND user_id IS NOT NULL", (A.now(timedelta(days=-5)), sid))
+    A.get_db().commit()
+    emails.clear()
+    res = A.housekeeping()
+    A.set_setting("last_backup", "")
+assert res["stale"] >= 1, res
+assert any("No update for" in e[2] for e in emails), emails
+assert any("No update from the assignee" in r[0] for r in q("SELECT message FROM notifications")), "admins told"
+print("update requests ok")
+
 print("ALL OK")
